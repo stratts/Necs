@@ -5,7 +5,7 @@ namespace Necs
     public interface IComponentList
     {
         ComponentList<T>? Cast<T>();
-        Span<ComponentInfo> Info { get; }
+        Span<ComponentInfo> Infos { get; }
         void CopyTo(IComponentList dest);
         Type Type { get; }
         ref ComponentInfo GetInfo(ulong id);
@@ -18,7 +18,7 @@ namespace Necs
         private int _count = 0;
 
         public int Count => _count;
-        public Span<ComponentInfo> Info => _info.AsSpan(0, _count);
+        public Span<ComponentInfo> Infos => _info.AsSpan(0, _count);
         public Span<T> Data => _data.AsSpan(0, _count);
         public Type Type { get; } = typeof(T);
 
@@ -28,7 +28,7 @@ namespace Necs
 
         public ref ComponentInfo GetInfo(ulong id)
         {
-            foreach (ref var info in Info)
+            foreach (ref var info in Infos)
             {
                 if (info.Id == id) return ref info;
             }
@@ -98,6 +98,33 @@ namespace Necs
                     }
                     _count--;
                     break;
+                }
+            }
+        }
+
+        public void Sort()
+        {
+            if (_count <= 1) return;
+            for (int i = 0; i < _count - 1; i++)
+            {
+                // If our sort key is greater than the next one
+                if (CompareInfo(_info[i], _info[i + 1]) > 0)
+                {
+                    // Find correct index
+                    var info = _info[i + 1];
+                    var data = _data[i + 1];
+
+                    int pos = i;
+                    while (pos > 0 && CompareInfo(_info[pos - 1], info) > 0) pos--;
+
+                    // Shift forwards one and insert
+                    var len = i - pos + 1;
+
+                    _info.AsSpan(pos, len).CopyTo(_info.AsSpan(pos + 1, len));
+                    _info[pos] = info;
+
+                    _data.AsSpan(pos, len).CopyTo(_data.AsSpan(pos + 1, len));
+                    _data[pos] = data;
                 }
             }
         }

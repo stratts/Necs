@@ -66,12 +66,12 @@ namespace Necs
                 if (list.Type == src.Type)
                 {
                     src.CopyTo(list);
-                    UpdateMapping(src.Info, list);
+                    UpdateMapping(src.Infos, list);
                     return;
                 }
             }
             _lists.Add(src);
-            UpdateMapping(src.Info, src);
+            UpdateMapping(src.Infos, src);
         }
 
         internal void AddEntity(ComponentInfo info)
@@ -95,7 +95,7 @@ namespace Necs
         public ref T GetComponent<T>(ulong entityId)
         {
             var list = GetList<T>();
-            var info = list.Info;
+            var info = list.Infos;
             for (int i = 0; i < list.Count; i++)
             {
                 if (info[i].ParentId == entityId) return ref list.Data[i];
@@ -134,7 +134,7 @@ namespace Necs
         private ref ComponentInfo GetInfo(ulong componentId)
         {
             var list = GetList(componentId);
-            foreach (ref var info in list.Info)
+            foreach (ref var info in list.Infos)
             {
                 if (info.Id == componentId) return ref info;
             }
@@ -163,7 +163,7 @@ namespace Necs
             var action = new Action<float>(elapsed =>
             {
                 var components = GetList<T>();
-                var iterator = new ComponentIterator<T>(this, components.Info, components.Data);
+                var iterator = new ComponentIterator<T>(this, components.Infos, components.Data);
                 system.Process(iterator);
             });
 
@@ -187,9 +187,9 @@ namespace Necs
             {
                 var components = GetList<T>();
 
-                for (int i = 0; i < components.Info.Length; i++)
+                for (int i = 0; i < components.Infos.Length; i++)
                 {
-                    var info = components.Info[i];
+                    var info = components.Infos[i];
                     var entity = GetEntityInfo(info.ParentId!.Value);
 
                     method?.Invoke(entity, ref components.Data[i]);
@@ -206,8 +206,8 @@ namespace Necs
                 var list1 = GetList<T1>();
                 var list2 = GetList<T2>();
 
-                var info1 = list1.Info;
-                var info2 = list2.Info;
+                var info1 = list1.Infos;
+                var info2 = list2.Infos;
 
                 var offset = 0;
 
