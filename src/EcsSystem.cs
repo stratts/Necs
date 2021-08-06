@@ -74,7 +74,7 @@ namespace Necs
             UpdateMapping(src.Info, src);
         }
 
-        public void AddEntity(ComponentInfo info)
+        internal void AddEntity(ComponentInfo info)
         {
             var list = GetList<EntityData>();
             list.Add(info, EntityData.Create());
@@ -149,8 +149,8 @@ namespace Necs
             foreach (var child in entityData.Children)
             {
                 var list = GetList(child);
+                if (list.Type == typeof(EntityData)) continue;
                 list.GetInfo(child).Priority = priority;
-                if (list.Type == typeof(EntityData)) UpdatePriority(child, priority);
             }
         }
 

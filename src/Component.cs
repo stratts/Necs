@@ -13,10 +13,10 @@ namespace Necs
 
         private ComponentInfo(ulong? parent = null)
         {
-            Priority = 0;
             Id = _id;
             _id++;
             ParentId = parent;
+            Priority = parent != null ? parent.Value : Id;
         }
 
         public static ComponentInfo Create() => new ComponentInfo(null);

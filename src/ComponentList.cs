@@ -24,13 +24,7 @@ namespace Necs
 
         ComponentList<T1>? IComponentList.Cast<T1>() => this is ComponentList<T1> l ? l : null;
 
-        private int CompareInfo(ComponentInfo a, ComponentInfo b)
-        {
-            var res = a.ParentId.GetValueOrDefault().CompareTo(b.ParentId.GetValueOrDefault());
-            if (res != 0) return res;
-            res = a.Id.CompareTo(b.Id);
-            return res;
-        }
+        private int CompareInfo(ComponentInfo a, ComponentInfo b) => a.Priority.CompareTo(b.Priority);
 
         public ref ComponentInfo GetInfo(ulong id)
         {

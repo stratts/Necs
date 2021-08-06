@@ -26,10 +26,13 @@ namespace Necs
         public void AddComponent<T>(T component)
         {
             var info = ComponentInfo.Create(Id);
+            info.Priority = Info.Priority;
             _system.AddComponent(info, component);
         }
 
         public ref T GetComponent<T>() => ref _system.GetComponent<T>(Id);
+
+        public void SetPriority(ulong priority) => _system.UpdatePriority(Id, priority);
 
         public void SetSystem(EcsSystem system)
         {
