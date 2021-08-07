@@ -11,6 +11,7 @@ namespace Necs
         public ulong Id;
         public ulong? ParentId;
         public ulong Priority;
+        public bool IsEntity;
 
         private ComponentInfo(ulong? parent = null)
         {
@@ -18,6 +19,7 @@ namespace Necs
             _id++;
             ParentId = parent;
             Priority = parent != null ? parent.Value : Id;
+            IsEntity = false;
         }
 
         public static ComponentInfo Create() => new ComponentInfo(null);

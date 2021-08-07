@@ -9,6 +9,7 @@ namespace Necs
         void CopyTo(IComponentList dest);
         Type Type { get; }
         ref ComponentInfo GetInfo(ulong id);
+        void Remove(ulong id);
     }
 
     public class ComponentList<T> : IComponentList

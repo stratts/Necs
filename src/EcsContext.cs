@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
+using System.Runtime.CompilerServices;
+
+[assembly: InternalsVisibleTo("Necs.Debug")]
 
 namespace Necs
 {
@@ -14,6 +16,11 @@ namespace Necs
         // Public methods
 
         public void AddEntity(Entity entity) => entity.SetContext(this);
+
+        public void RemoveEntity(Entity entity)
+        {
+            RemoveComponentTree(entity.Id);
+        }
 
         public ref ComponentInfo GetEntityInfo(ulong entityId)
         {
@@ -77,23 +84,33 @@ namespace Necs
             UpdateMapping(src.Infos, src);
         }
 
-        internal void AddEntity(ComponentInfo info)
+        internal void AddEntity(ComponentInfo info) => AddComponent(info, EntityData.Create());
+
+        internal void AddComponentToEntity<T>(ulong entityId, T component)
         {
-            var list = GetList<EntityData>();
-            list.Add(info, EntityData.Create());
+            var componentInfo = ComponentInfo.Create();
+            AddComponent(componentInfo, component);
+            AddComponentToEntity(entityId, componentInfo.Id);
         }
 
-        internal void AddComponent<T>(ComponentInfo info, T component)
+        internal void AddComponentToEntity(ulong entityId, ulong componentId)
         {
-            if (info.ParentId == null) throw new ArgumentException("Component added without parent");
-            var list = GetList<T>();
-            list.Add(info, component);
-            _map[info.Id] = list;
-            var data = GetEntityData(info.ParentId.Value);
-            data.Children.Add(info.Id);
+            ref var info = ref GetInfo(componentId);
+            if (info.ParentId != null) throw new ArgumentException("Component already has a parent, cannot add to entity");
+            info.ParentId = entityId;
+            var entityData = GetList<EntityData>().GetData(entityId);
+            entityData.Children.Add(componentId);
         }
 
-        internal ref T GetComponent<T>(ulong entityId)
+        internal void RemoveComponentFromEntity(ulong entityId, ulong componentId)
+        {
+            var entityData = GetList<EntityData>().GetData(entityId);
+            entityData.Children.Remove(componentId);
+            GetInfo(componentId).ParentId = null;
+            RemoveComponentTree(componentId);
+        }
+
+        internal ref T GetEntityComponent<T>(ulong entityId)
         {
             var list = GetList<T>();
             var info = list.Infos;
@@ -104,15 +121,47 @@ namespace Necs
             throw new ArgumentException("Entity does not have component of that type");
         }
 
-        internal Span<T> GetComponents<T>() => GetList<T>().Data;
+        internal IEnumerable<ulong> GetTree(ulong id)
+        {
+            var info = GetInfo(id);
+            if (info.IsEntity)
+            {
+                var c = GetEntityData(id).Children;
+                yield return id;
 
+                foreach (var child in c)
+                {
+                    foreach (var childDesc in GetTree(child)) yield return childDesc;
+                }
+            }
+            else yield return id;
+        }
+
+        internal void AddComponent<T>(ComponentInfo info, T component)
+        {
+            var list = GetList<T>();
+            list.Add(info, component);
+            _map[info.Id] = list;
+        }
+
+        internal void RemoveComponent(ulong id)
+        {
+            GetList(id).Remove(id);
+            _map.Remove(id);
+        }
+
+        internal void RemoveComponentTree(ulong id)
+        {
+            foreach (var treeId in GetTree(id)) RemoveComponent(treeId);
+        }
+
+        internal Span<T> GetComponents<T>() => GetList<T>().Data;
 
         internal ref ComponentInfo GetInfo(ulong componentId)
         {
             var list = GetList(componentId);
             return ref list.GetInfo(componentId);
         }
-
 
         // Protected and private methods
 
