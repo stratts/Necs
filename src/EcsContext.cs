@@ -3,33 +3,51 @@ using System.Collections.Generic;
 
 namespace Necs
 {
-    public delegate void ComponentAction<T>(ComponentInfo entity, ref T a);
-
-    public delegate void ComponentAction<T1, T2>(ComponentInfo entity, ref T1 a, ref T2 b);
-
-    public delegate void SpanConsumer<T>(Span<T> components);
-
-    public interface IComponentSystem<T>
+    public interface IEcsContext
     {
-        void Process(ComponentInfo entity, ref T component);
+        void CopyTo(IEcsContext target);
+        void CopyFromList(IComponentList src);
+        void AddEntity(Entity entity);
+        void AddComponent<T>(ComponentInfo info, T component);
+        ref T GetComponent<T>(ulong entityId);
+        Span<T> GetComponents<T>();
+        void UpdatePriority(ulong entityId, ulong priority);
+        ref ComponentInfo GetEntityInfo(ulong entityId);
+        EntityData GetEntityData(ulong entityId);
+        internal void AddEntity(ComponentInfo info);
     }
 
-    public interface IComponentSystem<T1, T2>
+    internal class EcsContext : EcsContext<Empty>
     {
-        void Process(ComponentInfo entity, ref T1 a, ref T2 b);
+
     }
 
-    public interface IComponentIteratorSystem<T>
+    public class EcsContext<TUpdateContext> : IEcsContext
     {
-        void Process(ComponentIterator<T> components);
-    }
+        public delegate void ComponentAction<T>(TUpdateContext context, ComponentInfo entity, ref T a);
 
+        public delegate void ComponentAction<T1, T2>(TUpdateContext context, ComponentInfo entity, ref T1 a, ref T2 b);
 
-    public class EcsContext
-    {
+        public delegate void SpanConsumer<T>(TUpdateContext context, Span<T> components);
+
+        public interface IComponentSystem<T>
+        {
+            void Process(TUpdateContext context, ComponentInfo entity, ref T component);
+        }
+
+        public interface IComponentSystem<T1, T2>
+        {
+            void Process(TUpdateContext context, ComponentInfo entity, ref T1 a, ref T2 b);
+        }
+
+        public interface IComponentIteratorSystem<T>
+        {
+            void Process(TUpdateContext context, ComponentIterator<T> components);
+        }
+
         private Dictionary<ulong, IComponentList> _map = new();
         private List<IComponentList> _lists = new();
-        private List<Action<float>> _systems = new();
+        private List<Action<TUpdateContext>> _systems = new();
 
         private ComponentList<T> GetList<T>()
         {
@@ -54,7 +72,7 @@ namespace Necs
             foreach (var info in infos) _map[info.Id] = list;
         }
 
-        public void CopyTo(EcsContext target)
+        public void CopyTo(IEcsContext target)
         {
             foreach (var list in _lists) target.CopyFromList(list);
         }
@@ -74,7 +92,7 @@ namespace Necs
             UpdateMapping(src.Infos, src);
         }
 
-        internal void AddEntity(ComponentInfo info)
+        void IEcsContext.AddEntity(ComponentInfo info)
         {
             var list = GetList<EntityData>();
             list.Add(info, EntityData.Create());
@@ -156,11 +174,11 @@ namespace Necs
 
         public void AddSystem<T>(IComponentIteratorSystem<T> system)
         {
-            var action = new Action<float>(elapsed =>
+            var action = new Action<TUpdateContext>(ctx =>
             {
                 var components = GetList<T>();
                 var iterator = new ComponentIterator<T>(this, components.Infos, components.Data);
-                system.Process(iterator);
+                system.Process(ctx, iterator);
             });
 
             _systems.Add(action);
@@ -168,10 +186,10 @@ namespace Necs
 
         public void AddSystem<T>(SpanConsumer<T> method)
         {
-            var action = new Action<float>(elapsed =>
+            var action = new Action<TUpdateContext>(ctx =>
             {
                 var components = GetList<T>();
-                method?.Invoke(components.Data);
+                method?.Invoke(ctx, components.Data);
             });
 
             _systems.Add(action);
@@ -179,7 +197,7 @@ namespace Necs
 
         public void AddSystem<T>(ComponentAction<T> method)
         {
-            var action = new Action<float>(elapsed =>
+            var action = new Action<TUpdateContext>(ctx =>
             {
                 var components = GetList<T>();
 
@@ -188,7 +206,7 @@ namespace Necs
                     var info = components.Infos[i];
                     var entity = GetEntityInfo(info.ParentId!.Value);
 
-                    method?.Invoke(entity, ref components.Data[i]);
+                    method?.Invoke(ctx, entity, ref components.Data[i]);
                 }
             });
 
@@ -197,7 +215,7 @@ namespace Necs
 
         public void AddSystem<T1, T2>(ComponentAction<T1, T2> method)
         {
-            var action = new Action<float>(elapsed =>
+            var action = new Action<TUpdateContext>(ctx =>
             {
                 var list1 = GetList<T1>();
                 var list2 = GetList<T2>();
@@ -214,7 +232,7 @@ namespace Necs
                     for (int j = offset; j < list2.Count; j++)
                     {
                         var parent2 = info2[j].ParentId;
-                        if (parent2 == parent) method?.Invoke(GetEntityInfo(parent!.Value), ref list1.Data[i], ref list2.Data[j]);
+                        if (parent2 == parent) method?.Invoke(ctx, GetEntityInfo(parent!.Value), ref list1.Data[i], ref list2.Data[j]);
                         else if (parent2 > parent)
                         {
                             offset = j;
@@ -227,9 +245,9 @@ namespace Necs
             _systems.Add(action);
         }
 
-        public void Update(float elapsed)
+        public void Update(TUpdateContext context)
         {
-            foreach (var system in _systems) system.Invoke(elapsed);
+            foreach (var system in _systems) system.Invoke(context);
         }
     }
 

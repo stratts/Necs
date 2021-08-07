@@ -4,7 +4,7 @@ namespace Necs
 {
     public class Entity
     {
-        private EcsContext _context = new();
+        private IEcsContext _context = new EcsContext();
         public ComponentInfo Info => _context.GetEntityInfo(Id);
 
         public ulong Id { get; }
@@ -34,7 +34,7 @@ namespace Necs
 
         public void SetPriority(ulong priority) => _context.UpdatePriority(Id, priority);
 
-        public void SetContext(EcsContext context)
+        public void SetContext(IEcsContext context)
         {
             _context.CopyTo(context);
             _context = context;
