@@ -20,7 +20,7 @@ namespace Necs
 
     public ref struct ComponentIterator<T>
     {
-        private IEcsContext _context;
+        private EcsContext _context;
         private Span<ComponentInfo> _info;
         private Span<T> _data;
 
@@ -29,7 +29,7 @@ namespace Necs
 
         public ComponentRef<T> Current => new ComponentRef<T>(_currentInfo, _data, _idx);
 
-        public ComponentIterator(IEcsContext context, Span<ComponentInfo> info, Span<T> data)
+        public ComponentIterator(EcsContext context, Span<ComponentInfo> info, Span<T> data)
         {
             _context = context;
             _currentInfo = default;

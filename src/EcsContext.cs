@@ -1,127 +1,19 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 
 namespace Necs
 {
-    public interface IEcsContext
+    public class EcsContext
     {
-        void CopyTo(IEcsContext target);
-        void CopyFromList(IComponentList src);
-        void AddEntity(Entity entity);
-        void AddComponent<T>(ComponentInfo info, T component);
-        ref T GetComponent<T>(ulong entityId);
-        Span<T> GetComponents<T>();
-        void UpdatePriority(ulong entityId, ulong priority);
-        ref ComponentInfo GetEntityInfo(ulong entityId);
-        EntityData GetEntityData(ulong entityId);
-        internal void AddEntity(ComponentInfo info);
-    }
-
-    internal class EcsContext : EcsContext<Empty>
-    {
-
-    }
-
-    public class EcsContext<TUpdateContext> : IEcsContext
-    {
-        public delegate void ComponentAction<T>(TUpdateContext context, ComponentInfo entity, ref T a);
-
-        public delegate void ComponentAction<T1, T2>(TUpdateContext context, ComponentInfo entity, ref T1 a, ref T2 b);
-
-        public delegate void SpanConsumer<T>(TUpdateContext context, Span<T> components);
-
-        public interface IComponentSystem<T>
-        {
-            void Process(TUpdateContext context, ComponentInfo entity, ref T component);
-        }
-
-        public interface IComponentSystem<T1, T2>
-        {
-            void Process(TUpdateContext context, ComponentInfo entity, ref T1 a, ref T2 b);
-        }
-
-        public interface IComponentIteratorSystem<T>
-        {
-            void Process(TUpdateContext context, ComponentIterator<T> components);
-        }
-
         private Dictionary<ulong, IComponentList> _map = new();
-        private List<IComponentList> _lists = new();
-        private List<Action<TUpdateContext>> _systems = new();
+        protected List<IComponentList> _lists = new();
 
-        private ComponentList<T> GetList<T>()
-        {
-            foreach (var list in _lists)
-            {
-                if (list.Cast<T>() is ComponentList<T> l) return l;
-            }
-            var newList = new ComponentList<T>();
-            _lists.Add(newList);
-            return newList;
-        }
+        internal EcsContext() { }
 
-        private IComponentList GetList(ulong componentId)
-        {
-            var present = _map.TryGetValue(componentId, out var list);
-            if (!present || list == null) throw new ArgumentException("Invalid component ID supplied");
-            return list;
-        }
-
-        private void UpdateMapping(Span<ComponentInfo> infos, IComponentList list)
-        {
-            foreach (var info in infos) _map[info.Id] = list;
-        }
-
-        public void CopyTo(IEcsContext target)
-        {
-            foreach (var list in _lists) target.CopyFromList(list);
-        }
-
-        public void CopyFromList(IComponentList src)
-        {
-            foreach (var list in _lists)
-            {
-                if (list.Type == src.Type)
-                {
-                    src.CopyTo(list);
-                    UpdateMapping(src.Infos, list);
-                    return;
-                }
-            }
-            _lists.Add(src);
-            UpdateMapping(src.Infos, src);
-        }
-
-        void IEcsContext.AddEntity(ComponentInfo info)
-        {
-            var list = GetList<EntityData>();
-            list.Add(info, EntityData.Create());
-        }
+        // Public methods
 
         public void AddEntity(Entity entity) => entity.SetContext(this);
-
-        public void AddComponent<T>(ComponentInfo info, T component)
-        {
-            if (info.ParentId == null) throw new ArgumentException("Component added without parent");
-            var list = GetList<T>();
-            list.Add(info, component);
-            _map[info.Id] = list;
-            var data = GetEntityData(info.ParentId.Value);
-            data.Children.Add(info.Id);
-        }
-
-        public ref T GetComponent<T>(ulong entityId)
-        {
-            var list = GetList<T>();
-            var info = list.Infos;
-            for (int i = 0; i < list.Count; i++)
-            {
-                if (info[i].ParentId == entityId) return ref list.Data[i];
-            }
-            throw new ArgumentException("Entity does not have component of that type");
-        }
-
-        public Span<T> GetComponents<T>() => GetList<T>().Data;
 
         public ref ComponentInfo GetEntityInfo(ulong entityId)
         {
@@ -149,12 +41,6 @@ namespace Necs
             }
         }
 
-        private ref ComponentInfo GetInfo(ulong componentId)
-        {
-            var list = GetList(componentId);
-            return ref list.GetInfo(componentId);
-        }
-
         public void UpdatePriority(ulong entityId, ulong priority)
         {
             GetEntityInfo(entityId).Priority = priority;
@@ -166,6 +52,117 @@ namespace Necs
                 if (list.Type == typeof(EntityData)) continue;
                 list.GetInfo(child).Priority = priority;
             }
+        }
+
+        public void CopyTo(EcsContext target)
+        {
+            foreach (var list in _lists) target.CopyFromList(list);
+        }
+
+
+        // Internal methods
+
+        internal void CopyFromList(IComponentList src)
+        {
+            foreach (var list in _lists)
+            {
+                if (list.Type == src.Type)
+                {
+                    src.CopyTo(list);
+                    UpdateMapping(src.Infos, list);
+                    return;
+                }
+            }
+            _lists.Add(src);
+            UpdateMapping(src.Infos, src);
+        }
+
+        internal void AddEntity(ComponentInfo info)
+        {
+            var list = GetList<EntityData>();
+            list.Add(info, EntityData.Create());
+        }
+
+        internal void AddComponent<T>(ComponentInfo info, T component)
+        {
+            if (info.ParentId == null) throw new ArgumentException("Component added without parent");
+            var list = GetList<T>();
+            list.Add(info, component);
+            _map[info.Id] = list;
+            var data = GetEntityData(info.ParentId.Value);
+            data.Children.Add(info.Id);
+        }
+
+        internal ref T GetComponent<T>(ulong entityId)
+        {
+            var list = GetList<T>();
+            var info = list.Infos;
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (info[i].ParentId == entityId) return ref list.Data[i];
+            }
+            throw new ArgumentException("Entity does not have component of that type");
+        }
+
+        internal Span<T> GetComponents<T>() => GetList<T>().Data;
+
+
+        internal ref ComponentInfo GetInfo(ulong componentId)
+        {
+            var list = GetList(componentId);
+            return ref list.GetInfo(componentId);
+        }
+
+
+        // Protected and private methods
+
+        protected ComponentList<T> GetList<T>()
+        {
+            foreach (var list in _lists)
+            {
+                if (list.Cast<T>() is ComponentList<T> l) return l;
+            }
+            var newList = new ComponentList<T>();
+            _lists.Add(newList);
+            return newList;
+        }
+
+        protected IComponentList GetList(ulong componentId)
+        {
+            var present = _map.TryGetValue(componentId, out var list);
+            if (!present || list == null) throw new ArgumentException("Invalid component ID supplied");
+            return list;
+        }
+
+        private void UpdateMapping(Span<ComponentInfo> infos, IComponentList list)
+        {
+            foreach (var info in infos) _map[info.Id] = list;
+        }
+    }
+
+    public class EcsContext<TUpdateContext> : EcsContext
+    {
+        public delegate void ComponentAction<T>(TUpdateContext context, ComponentInfo entity, ref T a);
+
+        public delegate void ComponentAction<T1, T2>(TUpdateContext context, ComponentInfo entity, ref T1 a, ref T2 b);
+
+        public delegate void SpanConsumer<T>(TUpdateContext context, Span<T> components);
+
+        private List<Action<TUpdateContext>> _systems = new();
+
+        public interface IComponentSystem<T>
+        {
+            void Process(TUpdateContext context, ComponentInfo entity, ref T component);
+        }
+
+        public interface IComponentSystem<T1, T2>
+        {
+            void Process(TUpdateContext context, ComponentInfo entity, ref T1 a, ref T2 b);
+        }
+
+        public interface IComponentIteratorSystem<T>
+        {
+            void Process(TUpdateContext context, ComponentIterator<T> components);
         }
 
         public void AddSystem<T>(IComponentSystem<T> system) => AddSystem<T>(system.Process);
@@ -250,5 +247,4 @@ namespace Necs
             foreach (var system in _systems) system.Invoke(context);
         }
     }
-
 }
