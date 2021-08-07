@@ -25,7 +25,7 @@ namespace Necs
     }
 
 
-    public class EcsSystem
+    public class EcsContext
     {
         private Dictionary<ulong, IComponentList> _map = new();
         private List<IComponentList> _lists = new();
@@ -54,7 +54,7 @@ namespace Necs
             foreach (var info in infos) _map[info.Id] = list;
         }
 
-        public void CopyTo(EcsSystem target)
+        public void CopyTo(EcsContext target)
         {
             foreach (var list in _lists) target.CopyFromList(list);
         }
@@ -80,7 +80,7 @@ namespace Necs
             list.Add(info, EntityData.Create());
         }
 
-        public void AddEntity(Entity entity) => entity.SetSystem(this);
+        public void AddEntity(Entity entity) => entity.SetContext(this);
 
         public void AddComponent<T>(ComponentInfo info, T component)
         {
@@ -134,11 +134,7 @@ namespace Necs
         private ref ComponentInfo GetInfo(ulong componentId)
         {
             var list = GetList(componentId);
-            foreach (ref var info in list.Infos)
-            {
-                if (info.Id == componentId) return ref info;
-            }
-            throw new ArgumentException("Invalid component ID supplied");
+            return ref list.GetInfo(componentId);
         }
 
         public void UpdatePriority(ulong entityId, ulong priority)

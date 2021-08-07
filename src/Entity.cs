@@ -4,8 +4,8 @@ namespace Necs
 {
     public class Entity
     {
-        private EcsSystem _system = new();
-        public ComponentInfo Info => _system.GetEntityInfo(Id);
+        private EcsContext _context = new();
+        public ComponentInfo Info => _context.GetEntityInfo(Id);
 
         public ulong Id { get; }
 
@@ -13,31 +13,31 @@ namespace Necs
         {
             var info = ComponentInfo.Create();
             Id = info.Id;
-            _system.AddEntity(info);
+            _context.AddEntity(info);
         }
 
         public void AddChild(Entity entity)
         {
-            _system.AddEntity(entity);
-            _system.GetEntityInfo(entity.Id).ParentId = Id;
-            _system.GetEntityData(Id).Children.Add(entity.Id);
+            _context.AddEntity(entity);
+            _context.GetEntityInfo(entity.Id).ParentId = Id;
+            _context.GetEntityData(Id).Children.Add(entity.Id);
         }
 
         public void AddComponent<T>(T component)
         {
             var info = ComponentInfo.Create(Id);
             info.Priority = Info.Priority;
-            _system.AddComponent(info, component);
+            _context.AddComponent(info, component);
         }
 
-        public ref T GetComponent<T>() => ref _system.GetComponent<T>(Id);
+        public ref T GetComponent<T>() => ref _context.GetComponent<T>(Id);
 
-        public void SetPriority(ulong priority) => _system.UpdatePriority(Id, priority);
+        public void SetPriority(ulong priority) => _context.UpdatePriority(Id, priority);
 
-        public void SetSystem(EcsSystem system)
+        public void SetContext(EcsContext context)
         {
-            _system.CopyTo(system);
-            _system = system;
+            _context.CopyTo(context);
+            _context = context;
         }
     }
 

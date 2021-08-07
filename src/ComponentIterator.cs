@@ -20,7 +20,7 @@ namespace Necs
 
     public ref struct ComponentIterator<T>
     {
-        private EcsSystem _system;
+        private EcsContext _context;
         private Span<ComponentInfo> _info;
         private Span<T> _data;
 
@@ -29,9 +29,9 @@ namespace Necs
 
         public ComponentRef<T> Current => new ComponentRef<T>(_currentInfo, _data, _idx);
 
-        public ComponentIterator(EcsSystem system, Span<ComponentInfo> info, Span<T> data)
+        public ComponentIterator(EcsContext context, Span<ComponentInfo> info, Span<T> data)
         {
-            _system = system;
+            _context = context;
             _currentInfo = default;
             _data = data;
             _info = info;
@@ -43,7 +43,7 @@ namespace Necs
             _idx++;
             if (_idx < _info.Length && _idx < _data.Length)
             {
-                _currentInfo = _system.GetEntityInfo(_info[_idx].ParentId!.Value);
+                _currentInfo = _context.GetEntityInfo(_info[_idx].ParentId!.Value);
                 return true;
             }
             return false;

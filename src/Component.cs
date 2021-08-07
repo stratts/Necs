@@ -1,9 +1,10 @@
+using System;
 
 namespace Necs
 {
     public struct Empty { }
 
-    public struct ComponentInfo
+    public struct ComponentInfo : IEquatable<ComponentInfo>
     {
         private static ulong _id = 0;
 
@@ -24,5 +25,7 @@ namespace Necs
         public static ComponentInfo Create(ulong parent) => new ComponentInfo(parent);
 
         public static ComponentInfo Create(ComponentInfo parent) => new ComponentInfo(parent.Id);
+
+        public bool Equals(ComponentInfo other) => Id == other.Id;
     }
 }
