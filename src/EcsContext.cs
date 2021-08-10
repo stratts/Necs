@@ -268,11 +268,6 @@ namespace Necs
         void Process(TUpdateContext context, ref T1 a, ref T2 b);
     }
 
-    public interface IComponentIteratorSystem<TUpdateContext, T>
-    {
-        void Process(TUpdateContext context, ComponentIterator<T> components);
-    }
-
     public class EcsContext<TUpdateContext> : EcsContext
     {
         private List<Action<TUpdateContext>> _systems = new();
@@ -280,18 +275,6 @@ namespace Necs
         public void AddSystem<T>(IComponentSystem<TUpdateContext, T> system) => AddSystem<T>(system.Process);
 
         public void AddSystem<T1, T2>(IComponentSystem<TUpdateContext, T1, T2> system) => AddSystem<T1, T2>(system.Process);
-
-        public void AddSystem<T>(IComponentIteratorSystem<TUpdateContext, T> system)
-        {
-            var action = new Action<TUpdateContext>(ctx =>
-            {
-                var components = GetList<T>();
-                var iterator = new ComponentIterator<T>(this, components.Data);
-                system.Process(ctx, iterator);
-            });
-
-            _systems.Add(action);
-        }
 
         public void AddSystem<T>(SpanConsumer<TUpdateContext, T> method)
         {
