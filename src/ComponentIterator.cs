@@ -7,12 +7,10 @@ namespace Necs
         private Span<T> _data;
         private int _idx;
 
-        public ComponentInfo Entity { get; }
         public ref T Component => ref _data[_idx];
 
-        public ComponentRef(ComponentInfo parent, Span<T> data, int idx)
+        public ComponentRef(Span<T> data, int idx)
         {
-            Entity = parent;
             _data = data;
             _idx = idx;
         }
@@ -23,11 +21,12 @@ namespace Necs
         private EcsContext _context;
         private Span<ComponentInfo> _info;
         private Span<T> _data;
+        private ComponentRef<T> _current;
 
         private ComponentInfo _currentInfo;
         private int _idx;
 
-        public ComponentRef<T> Current => new ComponentRef<T>(_currentInfo, _data, _idx);
+        public ComponentRef<T> Current => _current;
 
         public ComponentIterator(EcsContext context, Span<ComponentInfo> info, Span<T> data)
         {
@@ -36,6 +35,7 @@ namespace Necs
             _data = data;
             _info = info;
             _idx = -1;
+            _current = default;
         }
 
         public bool MoveNext()
@@ -43,7 +43,8 @@ namespace Necs
             _idx++;
             if (_idx < _info.Length && _idx < _data.Length)
             {
-                _currentInfo = _context.GetEntityInfo(_info[_idx].ParentId!.Value);
+                _currentInfo = default;
+                _current = new ComponentRef<T>(_data, _idx);
                 return true;
             }
             return false;

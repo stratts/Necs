@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 
-[assembly: InternalsVisibleTo("Necs.Debug")]
+[assembly: InternalsVisibleTo("Necs.Debug"), InternalsVisibleTo("Necs.Benchmark")]
 
 namespace Necs
 {
@@ -52,12 +52,14 @@ namespace Necs
         {
             GetEntityInfo(entityId).Priority = priority;
             var entityData = GetEntityData(entityId);
+            GetList<EntityData>().Resort(entityId);
 
             foreach (var child in entityData.Children)
             {
                 var list = GetList(child);
                 if (list.Type == typeof(EntityData)) continue;
                 list.GetInfo(child).Priority = priority;
+                list.Resort(child);
             }
         }
 
@@ -97,28 +99,87 @@ namespace Necs
         {
             ref var info = ref GetInfo(componentId);
             if (info.ParentId != null) throw new ArgumentException("Component already has a parent, cannot add to entity");
+
+            ref var entityInfo = ref GetEntityInfo(entityId);
+
             info.ParentId = entityId;
+            info.Tree = entityInfo.Tree;
+            info.TreeDepth = (byte)(entityInfo.TreeDepth + 1);
+            info.Branch = entityInfo.Branch;
+
             var entityData = GetList<EntityData>().GetData(entityId);
             entityData.Children.Add(componentId);
+
+            if (info.IsEntity)
+            {
+                for (byte i = 1; i <= byte.MaxValue; i++)
+                {
+                    if (!entityData.Branches.ContainsValue(i))
+                    {
+                        entityData.Branches[componentId] = i;
+                        info.Branch |= ((ulong)i) << (8 * (7 - entityInfo.TreeDepth));
+                        break;
+                    }
+                }
+                UpdateTree(info);
+            }
+
+            GetList(componentId).Resort(componentId);
+        }
+
+        internal void UpdateTree(ComponentInfo entityInfo)
+        {
+            var data = GetEntityData(entityInfo.Id);
+            data.Branches.Clear();
+
+            foreach (var id in data.Children)
+            {
+                ref var child = ref GetInfo(id);
+
+                child.TreeDepth = (byte)(entityInfo.TreeDepth + 1);
+                child.Tree = entityInfo.Tree;
+
+                if (child.IsEntity)
+                {
+                    for (byte i = 1; i <= byte.MaxValue; i++)
+                    {
+                        if (!data.Branches.ContainsValue(i))
+                        {
+                            data.Branches[id] = i;
+                            child.Branch |= (ulong)i << (8 * (7 - entityInfo.TreeDepth));
+                            break;
+                        }
+                    }
+
+                    UpdateTree(child);
+                }
+                else child.Branch = entityInfo.Branch;
+
+                GetList(id).Resort(id);
+            }
         }
 
         internal void RemoveComponentFromEntity(ulong entityId, ulong componentId)
         {
             var entityData = GetList<EntityData>().GetData(entityId);
             entityData.Children.Remove(componentId);
-            GetInfo(componentId).ParentId = null;
+            entityData.Branches.Remove(componentId);
+
+            ref var info = ref GetInfo(componentId);
+            info.ParentId = null;
+            info.Tree = info.Id;
+            info.TreeDepth = 0;
+
             RemoveComponentTree(componentId);
         }
 
         internal ref T GetEntityComponent<T>(ulong entityId)
         {
             var list = GetList<T>();
-            var info = list.Infos;
-            for (int i = 0; i < list.Count; i++)
-            {
-                if (info[i].ParentId == entityId) return ref list.Data[i];
-            }
-            throw new ArgumentException("Entity does not have component of that type");
+            var idx = list.GetByParent(entityId);
+            if (idx == null)
+                throw new ArgumentException("Entity does not have component of that type");
+            else return ref list.Data[idx.Value];
         }
 
         internal IEnumerable<ulong> GetTree(ulong id)
@@ -165,7 +226,7 @@ namespace Necs
 
         // Protected and private methods
 
-        protected ComponentList<T> GetList<T>()
+        internal ComponentList<T> GetList<T>()
         {
             foreach (var list in _lists)
             {
@@ -189,36 +250,38 @@ namespace Necs
         }
     }
 
+    public delegate void ComponentAction<TUpdateContext, T>(TUpdateContext context, ref T a);
+
+    public delegate void ComponentAction<TUpdateContext, T1, T2>(TUpdateContext context, ref T1 a, ref T2 b);
+
+    public delegate void ParentAction<TUpdateContext, T>(TUpdateContext context, ref T a, Nullable<T> parent) where T : struct;
+
+    public delegate void SpanConsumer<TUpdateContext, T>(TUpdateContext context, Span<T> components);
+
+    public interface IComponentSystem<TUpdateContext, T>
+    {
+        void Process(TUpdateContext context, ref T component);
+    }
+
+    public interface IComponentSystem<TUpdateContext, T1, T2>
+    {
+        void Process(TUpdateContext context, ref T1 a, ref T2 b);
+    }
+
+    public interface IComponentIteratorSystem<TUpdateContext, T>
+    {
+        void Process(TUpdateContext context, ComponentIterator<T> components);
+    }
+
     public class EcsContext<TUpdateContext> : EcsContext
     {
-        public delegate void ComponentAction<T>(TUpdateContext context, ComponentInfo entity, ref T a);
-
-        public delegate void ComponentAction<T1, T2>(TUpdateContext context, ComponentInfo entity, ref T1 a, ref T2 b);
-
-        public delegate void SpanConsumer<T>(TUpdateContext context, Span<T> components);
-
         private List<Action<TUpdateContext>> _systems = new();
 
-        public interface IComponentSystem<T>
-        {
-            void Process(TUpdateContext context, ComponentInfo entity, ref T component);
-        }
+        public void AddSystem<T>(IComponentSystem<TUpdateContext, T> system) => AddSystem<T>(system.Process);
 
-        public interface IComponentSystem<T1, T2>
-        {
-            void Process(TUpdateContext context, ComponentInfo entity, ref T1 a, ref T2 b);
-        }
+        public void AddSystem<T1, T2>(IComponentSystem<TUpdateContext, T1, T2> system) => AddSystem<T1, T2>(system.Process);
 
-        public interface IComponentIteratorSystem<T>
-        {
-            void Process(TUpdateContext context, ComponentIterator<T> components);
-        }
-
-        public void AddSystem<T>(IComponentSystem<T> system) => AddSystem<T>(system.Process);
-
-        public void AddSystem<T1, T2>(IComponentSystem<T1, T2> system) => AddSystem<T1, T2>(system.Process);
-
-        public void AddSystem<T>(IComponentIteratorSystem<T> system)
+        public void AddSystem<T>(IComponentIteratorSystem<TUpdateContext, T> system)
         {
             var action = new Action<TUpdateContext>(ctx =>
             {
@@ -230,7 +293,7 @@ namespace Necs
             _systems.Add(action);
         }
 
-        public void AddSystem<T>(SpanConsumer<T> method)
+        public void AddSystem<T>(SpanConsumer<TUpdateContext, T> method)
         {
             var action = new Action<TUpdateContext>(ctx =>
             {
@@ -241,25 +304,22 @@ namespace Necs
             _systems.Add(action);
         }
 
-        public void AddSystem<T>(ComponentAction<T> method)
+        public void AddSystem<T>(ComponentAction<TUpdateContext, T> method)
         {
             var action = new Action<TUpdateContext>(ctx =>
             {
                 var components = GetList<T>();
 
-                for (int i = 0; i < components.Infos.Length; i++)
+                foreach (ref var c in components.Data)
                 {
-                    var info = components.Infos[i];
-                    var entity = GetEntityInfo(info.ParentId!.Value);
-
-                    method?.Invoke(ctx, entity, ref components.Data[i]);
+                    method?.Invoke(ctx, ref c);
                 }
             });
 
             _systems.Add(action);
         }
 
-        public void AddSystem<T1, T2>(ComponentAction<T1, T2> method)
+        public void AddSystem<T1, T2>(ComponentAction<TUpdateContext, T1, T2> method)
         {
             var action = new Action<TUpdateContext>(ctx =>
             {
@@ -273,13 +333,15 @@ namespace Necs
 
                 for (int i = 0; i < list1.Count; i++)
                 {
+                    var priority = info1[i].Priority;
                     var parent = info1[i].ParentId;
 
                     for (int j = offset; j < list2.Count; j++)
                     {
+                        var priority2 = info1[i].Priority;
                         var parent2 = info2[j].ParentId;
-                        if (parent2 == parent) method?.Invoke(ctx, GetEntityInfo(parent!.Value), ref list1.Data[i], ref list2.Data[j]);
-                        else if (parent2 > parent)
+                        if (priority == priority2 && parent2 == parent) method?.Invoke(ctx, ref list1.Data[i], ref list2.Data[j]);
+                        else if (priority2 > priority)
                         {
                             offset = j;
                             break;

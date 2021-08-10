@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace Necs
 {
@@ -10,6 +11,27 @@ namespace Necs
         Type Type { get; }
         ref ComponentInfo GetInfo(ulong id);
         void Remove(ulong id);
+        void Resort(ulong id);
+    }
+
+    public class InfoComparer : IComparer<ComponentInfo>
+    {
+        private Dictionary<ulong, int> _treePriority;
+
+        public InfoComparer(Dictionary<ulong, int> treePriority) => _treePriority = treePriority;
+
+        public int Compare(ComponentInfo x, ComponentInfo y)
+        {
+            var res = x.Tree.CompareTo(y.Tree);
+            if (res != 0) return res;
+            res = (x.Branch).CompareTo(y.Branch);
+            return res;
+        }
+    };
+
+    public record TreeComparable(ulong Tree) : IComparable<ComponentInfo>
+    {
+        public int CompareTo(ComponentInfo other) => Tree.CompareTo(other.Tree);
     }
 
     public class ComponentList<T> : IComponentList
@@ -17,61 +39,58 @@ namespace Necs
         private ComponentInfo[] _info = new ComponentInfo[4];
         private T[] _data = new T[4];
         private int _count = 0;
+        private Dictionary<ulong, int> _treePriority = new();
+        private IComparer<ComponentInfo> _comparer;
+        private Dictionary<ulong, ulong> _treeMap = new();
 
         public int Count => _count;
         public Span<ComponentInfo> Infos => _info.AsSpan(0, _count);
         public Span<T> Data => _data.AsSpan(0, _count);
         public Type Type { get; } = typeof(T);
 
+        public ComponentList()
+        {
+            _comparer = new InfoComparer(_treePriority);
+        }
+
         ComponentList<T1>? IComponentList.Cast<T1>() => this is ComponentList<T1> l ? l : null;
 
         private int CompareInfo(ComponentInfo a, ComponentInfo b) => a.Priority.CompareTo(b.Priority);
 
-        public ref ComponentInfo GetInfo(ulong id)
-        {
-            foreach (ref var info in Infos)
-            {
-                if (info.Id == id) return ref info;
-            }
-            throw new ArgumentException("Entity with that ID is not found in this list");
-        }
+        public ref ComponentInfo GetInfo(ulong id) => ref _info[Infos.IndexOf(new ComponentInfo() { Id = id })];
 
-        public ref T GetData(ulong id)
+        public ref T GetData(ulong id) => ref _data[Infos.IndexOf(new ComponentInfo() { Id = id })];
+
+        public int? GetByParent(ulong id) => GetIndexOf(_treeMap[id], c => c.ParentId == id);
+
+        private int? GetIndexOf(ulong tree, Predicate<ComponentInfo> match)
         {
-            for (int i = 0; i < _count; i++)
+            var treeIdx = Infos.BinarySearch(new TreeComparable(tree));
+            for (int i = treeIdx; i < _count; i++)
             {
-                if (_info[i].Id == id) return ref _data[i];
+                if (match(Infos[i])) return i;
+                else if (_info[i].Tree != tree) break;
             }
-            throw new ArgumentException("Entity with that ID is not found in this list");
+
+            return null;
         }
 
         public void Add(ComponentInfo info, T data)
         {
-            bool inserted = false;
-            for (int i = 0; i < _count; i++)
-            {
-                var curr = _info[i];
-                if (CompareInfo(curr, info) >= 0)
-                {
-                    var srcData = _data.AsSpan(i, _count - i);
-                    var destData = _data.AsSpan(i + 1, _count - i);
-                    srcData.CopyTo(destData);
+            _treeMap[info.Id] = info.Tree;
 
-                    var srcInfo = _info.AsSpan(i, _count - i);
-                    var destInfo = _info.AsSpan(i + 1, _count - i);
-                    srcInfo.CopyTo(destInfo);
+            var idx = Infos.BinarySearch(info, _comparer);
 
-                    _info[i] = info;
-                    _data[i] = data;
-                    inserted = true;
-                    break;
-                }
-            }
-            if (!inserted)
+            if (idx < 0) idx = ~idx;
+            if (idx < _count)
             {
-                _info[_count] = info;
-                _data[_count] = data;
+                Array.Copy(_info, idx, _info, idx + 1, _count - idx);
+                Array.Copy(_data, idx, _data, idx + 1, _count - idx);
             }
+
+            _info[idx] = info;
+            _data[idx] = data;
+
             _count++;
 
             if (_count >= _data.Length)
@@ -88,46 +107,58 @@ namespace Necs
 
         public void Remove(ulong id)
         {
-            for (int i = 0; i < _count; i++)
-            {
-                if (_info[i].Id == id)
-                {
-                    for (int j = i; j < _count - 1; j++)
-                    {
-                        _data[j] = _data[j + 1];
-                        _info[j] = _info[j + 1];
-                    }
-                    _count--;
-                    break;
-                }
-            }
+            var i = Infos.IndexOf(new ComponentInfo() { Id = id });
+            _treeMap.Remove(id);
+
+            Array.Copy(_info, i + 1, _info, i, _count - i);
+            Array.Copy(_data, i + 1, _data, i, _count - i);
+            _count--;
         }
 
-        public void Sort()
+        public void Resort(ulong id)
         {
-            if (_count <= 1) return;
-            for (int i = 0; i < _count - 1; i++)
+            var oldIdx = Infos.IndexOf(new ComponentInfo() { Id = id });
+            if (oldIdx < 0) return;
+
+            var info = Infos[oldIdx];
+            var data = Data[oldIdx];
+
+            var lower = Infos.Slice(0, oldIdx);
+            var upper = Infos.Slice(oldIdx + 1);
+
+            var lowerIdx = lower.BinarySearch(info, _comparer);
+            var upperIdx = upper.BinarySearch(info, _comparer);
+
+            int newIdx;
+
+            if (~lowerIdx == lower.Length && ~upperIdx == 0) return; // Already in correct spot
+            else if (~lowerIdx == lower.Length) newIdx = lower.Length + ~upperIdx;
+            else newIdx = ~lowerIdx;
+
+            if (newIdx < 0) newIdx = ~newIdx;
+
+            int start;
+            int shift;
+            int length = (int)Math.Abs(oldIdx - newIdx);
+
+            if (oldIdx < newIdx)
             {
-                // If our sort key is greater than the next one
-                if (CompareInfo(_info[i], _info[i + 1]) > 0)
-                {
-                    // Find correct index
-                    var info = _info[i + 1];
-                    var data = _data[i + 1];
-
-                    int pos = i;
-                    while (pos > 0 && CompareInfo(_info[pos - 1], info) > 0) pos--;
-
-                    // Shift forwards one and insert
-                    var len = i - pos + 1;
-
-                    _info.AsSpan(pos, len).CopyTo(_info.AsSpan(pos + 1, len));
-                    _info[pos] = info;
-
-                    _data.AsSpan(pos, len).CopyTo(_data.AsSpan(pos + 1, len));
-                    _data[pos] = data;
-                }
+                start = oldIdx + 1;
+                shift = -1;
             }
+            else if (oldIdx > newIdx)
+            {
+                start = newIdx;
+                shift = 1;
+            }
+            else return;
+
+            Array.Copy(_info, start, _info, start + shift, length);
+            Array.Copy(_data, start, _data, start + shift, length);
+
+            _info[newIdx] = info;
+            _data[newIdx] = data;
+            _treeMap[info.Id] = info.Tree;
         }
 
         public void CopyTo(IComponentList dest)

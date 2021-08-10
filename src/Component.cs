@@ -12,21 +12,31 @@ namespace Necs
         public ulong? ParentId;
         public ulong Priority;
         public bool IsEntity;
+        public ulong Tree;
+        public byte TreeDepth;
+        public ulong Branch;
 
-        private ComponentInfo(ulong? parent = null)
+        public static ComponentInfo Create()
         {
-            Id = _id;
+            var i = new ComponentInfo()
+            {
+                Id = _id,
+                Priority = _id,
+                Tree = _id,
+                IsEntity = false,
+                Branch = 0,
+            };
+
             _id++;
-            ParentId = parent;
-            Priority = parent != null ? parent.Value : Id;
-            IsEntity = false;
+            return i;
         }
 
-        public static ComponentInfo Create() => new ComponentInfo(null);
-
-        public static ComponentInfo Create(ulong parent) => new ComponentInfo(parent);
-
-        public static ComponentInfo Create(ComponentInfo parent) => new ComponentInfo(parent.Id);
+        public bool IsDescendantOf(ComponentInfo other)
+        {
+            if (other.Tree != Tree || other.TreeDepth >= TreeDepth) return false;
+            ulong mask = other.TreeDepth == 0 ? 0 : ((ulong)Math.Pow(2, 8 * other.TreeDepth) - 1) << (8 * (8 - other.TreeDepth));
+            return (Branch & mask) == (other.Branch & mask);
+        }
 
         public bool Equals(ComponentInfo other) => Id == other.Id;
     }
