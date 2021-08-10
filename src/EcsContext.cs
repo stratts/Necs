@@ -104,7 +104,7 @@ namespace Necs
 
             info.ParentId = entityId;
             info.Tree = entityInfo.Tree;
-            info.TreeDepth = (byte)(entityInfo.TreeDepth + 1);
+            info.TreeDepth = info.IsEntity ? (byte)(entityInfo.TreeDepth + 1) : entityInfo.TreeDepth;
             info.Branch = entityInfo.Branch;
 
             var entityData = GetList<EntityData>().GetData(entityId);
@@ -136,7 +136,7 @@ namespace Necs
             {
                 ref var child = ref GetInfo(id);
 
-                child.TreeDepth = (byte)(entityInfo.TreeDepth + 1);
+                child.TreeDepth = child.IsEntity ? (byte)(entityInfo.TreeDepth + 1) : entityInfo.TreeDepth;
                 child.Tree = entityInfo.Tree;
 
                 if (child.IsEntity)
@@ -254,7 +254,7 @@ namespace Necs
 
     public delegate void ComponentAction<TUpdateContext, T1, T2>(TUpdateContext context, ref T1 a, ref T2 b);
 
-    public delegate void ParentAction<TUpdateContext, T>(TUpdateContext context, ref T a, Nullable<T> parent) where T : struct;
+    public delegate void ParentAction<TUpdateContext, T>(TUpdateContext context, ref T a, ref T parent, bool hasParent) where T : struct;
 
     public delegate void SpanConsumer<TUpdateContext, T>(TUpdateContext context, Span<T> components);
 
@@ -286,7 +286,7 @@ namespace Necs
             var action = new Action<TUpdateContext>(ctx =>
             {
                 var components = GetList<T>();
-                var iterator = new ComponentIterator<T>(this, components.Infos, components.Data);
+                var iterator = new ComponentIterator<T>(this, components.Data);
                 system.Process(ctx, iterator);
             });
 
@@ -333,20 +333,70 @@ namespace Necs
 
                 for (int i = 0; i < list1.Count; i++)
                 {
-                    var priority = info1[i].Priority;
+                    var tree = info1[i].Tree;
                     var parent = info1[i].ParentId;
 
                     for (int j = offset; j < list2.Count; j++)
                     {
-                        var priority2 = info1[i].Priority;
+                        var tree2 = info2[j].Tree;
                         var parent2 = info2[j].ParentId;
-                        if (priority == priority2 && parent2 == parent) method?.Invoke(ctx, ref list1.Data[i], ref list2.Data[j]);
-                        else if (priority2 > priority)
+                        if (parent2 == parent)
+                        {
+                            method.Invoke(ctx, ref list1.Data[i], ref list2.Data[j]);
+                            offset = j + 1;
+                            break;
+                        }
+                        else if (tree2 != tree)
                         {
                             offset = j;
                             break;
                         }
                     }
+                }
+            });
+
+            _systems.Add(action);
+        }
+
+        public void AddSystem<T>(ParentAction<TUpdateContext, T> method) where T : struct
+        {
+            var action = new Action<TUpdateContext>(ctx =>
+            {
+                var list = GetList<T>();
+                var infos = list.Infos;
+                var data = list.Data;
+
+                ref ComponentInfo prevParent = ref infos[0];
+                ref T prevData = ref data[0];
+                T none = default;
+
+                for (int i = 1; i < infos.Length; i++)
+                {
+                    ref var info = ref infos[i];
+                    ref var d = ref data[i];
+
+                    if (info.Tree != prevParent.Tree) method.Invoke(ctx, ref d, ref none, false);
+                    else if (info.IsDescendantOf(ref prevParent)) method.Invoke(ctx, ref d, ref prevData, true);
+                    else
+                    {
+                        for (int j = i - 2; j >= 0; j--)
+                        {
+                            var prev = infos[j];
+                            if (info.IsDescendantOf(ref prev))
+                            {
+                                method.Invoke(ctx, ref d, ref data[j], true);
+                                break;
+                            }
+                            else if (info.Tree != prev.Tree)
+                            {
+                                method.Invoke(ctx, ref d, ref none, false);
+                                break;
+                            }
+                        }
+                    }
+
+                    prevParent = ref info;
+                    prevData = ref d;
                 }
             });
 

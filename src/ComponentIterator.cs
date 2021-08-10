@@ -19,21 +19,17 @@ namespace Necs
     public ref struct ComponentIterator<T>
     {
         private EcsContext _context;
-        private Span<ComponentInfo> _info;
         private Span<T> _data;
         private ComponentRef<T> _current;
 
-        private ComponentInfo _currentInfo;
         private int _idx;
 
         public ComponentRef<T> Current => _current;
 
-        public ComponentIterator(EcsContext context, Span<ComponentInfo> info, Span<T> data)
+        public ComponentIterator(EcsContext context, Span<T> data)
         {
             _context = context;
-            _currentInfo = default;
             _data = data;
-            _info = info;
             _idx = -1;
             _current = default;
         }
@@ -41,9 +37,8 @@ namespace Necs
         public bool MoveNext()
         {
             _idx++;
-            if (_idx < _info.Length && _idx < _data.Length)
+            if (_idx < _data.Length)
             {
-                _currentInfo = default;
                 _current = new ComponentRef<T>(_data, _idx);
                 return true;
             }

@@ -40,8 +40,6 @@ namespace Necs
 
         public void SetPriority(ulong priority) => _context.UpdatePriority(Id, priority);
 
-        public bool IsDescendantOf(Entity entity) => Info.IsDescendantOf(entity.Info);
-
         public void SetContext(EcsContext context, bool copy = true)
         {
             if (_context == context) return;

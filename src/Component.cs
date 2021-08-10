@@ -31,10 +31,10 @@ namespace Necs
             return i;
         }
 
-        public bool IsDescendantOf(ComponentInfo other)
+        public bool IsDescendantOf(ref ComponentInfo other)
         {
             if (other.Tree != Tree || other.TreeDepth >= TreeDepth) return false;
-            ulong mask = other.TreeDepth == 0 ? 0 : ((ulong)Math.Pow(2, 8 * other.TreeDepth) - 1) << (8 * (8 - other.TreeDepth));
+            ulong mask = other.TreeDepth == 0 ? 0 : ulong.MaxValue << (8 * (8 - other.TreeDepth));
             return (Branch & mask) == (other.Branch & mask);
         }
 
