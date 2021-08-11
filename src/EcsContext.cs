@@ -25,27 +25,13 @@ namespace Necs
         public ref ComponentInfo GetEntityInfo(ulong entityId)
         {
             var list = GetList<EntityData>();
-            try
-            {
-                return ref list.GetInfo(entityId);
-            }
-            catch (ArgumentException)
-            {
-                throw new ArgumentException("Entity with that ID has not been added to system");
-            }
+            return ref list.GetInfo(entityId);
         }
 
         public EntityData GetEntityData(ulong entityId)
         {
             var list = GetList<EntityData>();
-            try
-            {
-                return list.GetData(entityId);
-            }
-            catch (ArgumentException)
-            {
-                throw new ArgumentException("Entity with that ID has not been added to system");
-            }
+            return list.GetData(entityId);
         }
 
         public void UpdatePriority(ulong entityId, ulong priority)
@@ -102,13 +88,13 @@ namespace Necs
 
             ref var entityInfo = ref GetEntityInfo(entityId);
 
+            var entityData = GetList<EntityData>().GetData(entityId);
+            entityData.Children.Add(componentId);
+
             info.ParentId = entityId;
             info.Tree = entityInfo.Tree;
             info.TreeDepth = info.IsEntity ? (byte)(entityInfo.TreeDepth + 1) : entityInfo.TreeDepth;
             info.Branch = entityInfo.Branch;
-
-            var entityData = GetList<EntityData>().GetData(entityId);
-            entityData.Children.Add(componentId);
 
             if (info.IsEntity)
             {
@@ -121,10 +107,10 @@ namespace Necs
                         break;
                     }
                 }
+                GetList(componentId).Resort(componentId);
                 UpdateTree(info);
             }
-
-            GetList(componentId).Resort(componentId);
+            else GetList(componentId).Resort(componentId);
         }
 
         internal void UpdateTree(ComponentInfo entityInfo)
@@ -151,11 +137,14 @@ namespace Necs
                         }
                     }
 
+                    GetList(id).Resort(id);
                     UpdateTree(child);
                 }
-                else child.Branch = entityInfo.Branch;
-
-                GetList(id).Resort(id);
+                else
+                {
+                    child.Branch = entityInfo.Branch;
+                    GetList(id).Resort(id);
+                }
             }
         }
 
@@ -263,6 +252,16 @@ namespace Necs
         void Process(TUpdateContext context, ref T component);
     }
 
+    public interface IComponentSpanSystem<TUpdateContext, T>
+    {
+        void Process(TUpdateContext context, Span<T> components);
+    }
+
+    public interface IComponentParentSystem<TUpdateContext, T> where T : struct
+    {
+        void Process(TUpdateContext context, ref T a, ref T parent, bool hasParent);
+    }
+
     public interface IComponentSystem<TUpdateContext, T1, T2>
     {
         void Process(TUpdateContext context, ref T1 a, ref T2 b);
@@ -276,6 +275,8 @@ namespace Necs
 
 
         public void AddSystem<T>(IComponentSystem<TUpdateContext, T> system) => AddSystem<T>(system.Process);
+
+        public void AddSystem<T>(IComponentParentSystem<TUpdateContext, T> system) where T : struct => AddSystem<T>(system.Process);
 
         public void AddSystem<T1, T2>(IComponentSystem<TUpdateContext, T1, T2> system) => AddSystem<T1, T2>(system.Process);
 

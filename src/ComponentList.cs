@@ -143,7 +143,7 @@ namespace Necs
         public void Resort(ulong id)
         {
             var oldIdx = Infos.IndexOf(new ComponentInfo() { Id = id });
-            if (oldIdx < 0) return;
+            if (oldIdx < 0) throw new ArgumentException("ID not found");
 
             var info = Infos[oldIdx];
             var data = Data[oldIdx];
@@ -160,7 +160,8 @@ namespace Necs
             int newIdx;
 
             if (~lowerIdx == lower.Length && ~upperIdx == 0) return; // Already in correct spot
-            else if (~lowerIdx == lower.Length) newIdx = lower.Length + ~upperIdx;
+            else if (~lowerIdx == lower.Length && upperIdx > 0) newIdx = lower.Length + upperIdx;
+            else if (~lowerIdx == lower.Length && upperIdx < 0) newIdx = Math.Min(lower.Length + ~upperIdx, _count - 1);
             else newIdx = ~lowerIdx;
 
             if (newIdx < 0) newIdx = ~newIdx;
@@ -179,7 +180,10 @@ namespace Necs
                 start = newIdx;
                 shift = 1;
             }
-            else return;
+            else
+            {
+                return;
+            }
 
             Array.Copy(_info, start, _info, start + shift, length);
             Array.Copy(_data, start, _data, start + shift, length);
