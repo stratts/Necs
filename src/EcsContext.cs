@@ -351,21 +351,33 @@ namespace Necs
 
                 ref ComponentInfo prevParent = ref infos[0];
                 ref T prevData = ref data[0];
+
+                ulong prevTree, prevBranch;
+                byte prevDepth;
+                ulong mask;
+
                 T none = default;
 
                 for (int i = 1; i < infos.Length; i++)
                 {
+                    prevTree = prevParent.Tree;
+                    prevBranch = prevParent.Branch;
+                    prevDepth = prevParent.TreeDepth;
+                    mask = prevDepth == 0 ? 0 : ulong.MaxValue << (8 * (8 - prevDepth));
+
                     ref var info = ref infos[i];
                     ref var d = ref data[i];
 
-                    if (info.Tree != prevParent.Tree) method.Invoke(ctx, ref d, ref none, false);
-                    else if (info.IsDescendantOf(ref prevParent)) method.Invoke(ctx, ref d, ref prevData, true);
+                    if (info.Tree != prevTree) method.Invoke(ctx, ref d, ref none, false);
+                    else if (info.TreeDepth > prevDepth && (info.Branch & mask) == (prevBranch & mask)) method.Invoke(ctx, ref d, ref prevData, true);
                     else
                     {
                         for (int j = i - 2; j >= 0; j--)
                         {
                             var prev = infos[j];
-                            if (info.IsDescendantOf(ref prev))
+                            prevDepth = prev.TreeDepth;
+                            mask = prevDepth == 0 ? 0 : ulong.MaxValue << (8 * (8 - prevDepth));
+                            if (info.TreeDepth > prevDepth && (info.Branch & mask) == (prev.Branch & mask))
                             {
                                 method.Invoke(ctx, ref d, ref data[j], true);
                                 break;
