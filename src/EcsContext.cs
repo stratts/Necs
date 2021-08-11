@@ -272,24 +272,39 @@ namespace Necs
     {
         private List<Action<TUpdateContext>> _systems = new();
 
+        private void AddSystem(Action<TUpdateContext> action) => _systems.Add(action);
+
+
         public void AddSystem<T>(IComponentSystem<TUpdateContext, T> system) => AddSystem<T>(system.Process);
 
         public void AddSystem<T1, T2>(IComponentSystem<TUpdateContext, T1, T2> system) => AddSystem<T1, T2>(system.Process);
 
-        public void AddSystem<T>(SpanConsumer<TUpdateContext, T> method)
+        public void AddSystem<T>(SpanConsumer<TUpdateContext, T> method) => AddSystem(MakeAction(method));
+
+        public void AddSystem<T>(ComponentAction<TUpdateContext, T> method) => AddSystem(MakeAction(method));
+
+        public void AddSystem<T1, T2>(ComponentAction<TUpdateContext, T1, T2> method) => AddSystem(MakeAction(method));
+
+        public void AddSystem<T>(ParentAction<TUpdateContext, T> method) where T : struct => AddSystem(MakeAction(method));
+
+        public void Update(TUpdateContext context)
         {
-            var action = new Action<TUpdateContext>(ctx =>
+            foreach (var system in _systems) system.Invoke(context);
+        }
+
+
+        protected Action<TContext> MakeAction<TContext, T>(SpanConsumer<TContext, T> method)
+        {
+            return new(ctx =>
             {
                 var components = GetList<T>();
                 method?.Invoke(ctx, components.Data);
             });
-
-            _systems.Add(action);
         }
 
-        public void AddSystem<T>(ComponentAction<TUpdateContext, T> method)
+        protected Action<TContext> MakeAction<TContext, T>(ComponentAction<TContext, T> method)
         {
-            var action = new Action<TUpdateContext>(ctx =>
+            return new(ctx =>
             {
                 var components = GetList<T>();
 
@@ -298,13 +313,11 @@ namespace Necs
                     method?.Invoke(ctx, ref c);
                 }
             });
-
-            _systems.Add(action);
         }
 
-        public void AddSystem<T1, T2>(ComponentAction<TUpdateContext, T1, T2> method)
+        protected Action<TContext> MakeAction<TContext, T1, T2>(ComponentAction<TContext, T1, T2> method)
         {
-            var action = new Action<TUpdateContext>(ctx =>
+            return new(ctx =>
             {
                 var list1 = GetList<T1>();
                 var list2 = GetList<T2>();
@@ -337,13 +350,11 @@ namespace Necs
                     }
                 }
             });
-
-            _systems.Add(action);
         }
 
-        public void AddSystem<T>(ParentAction<TUpdateContext, T> method) where T : struct
+        protected Action<TContext> MakeAction<TContext, T>(ParentAction<TContext, T> method) where T : struct
         {
-            var action = new Action<TUpdateContext>(ctx =>
+            return new(ctx =>
             {
                 var list = GetList<T>();
                 var infos = list.Infos;
@@ -394,13 +405,32 @@ namespace Necs
                     prevData = ref d;
                 }
             });
-
-            _systems.Add(action);
         }
+    }
 
-        public void Update(TUpdateContext context)
+    public class EcsContext<TUpdateContext, TRenderContext> : EcsContext<TUpdateContext>
+    {
+        private List<Action<TRenderContext>> _renderSystems = new();
+
+        private void AddSystem(Action<TRenderContext> action) => _renderSystems.Add(action);
+
+
+        public void AddRenderSystem<T>(IComponentSystem<TRenderContext, T> system) => AddRenderSystem<T>(system.Process);
+
+        public void AddRenderSystem<T1, T2>(IComponentSystem<TRenderContext, T1, T2> system) => AddRenderSystem<T1, T2>(system.Process);
+
+        public void AddRenderSystem<T>(SpanConsumer<TRenderContext, T> method) => AddSystem(MakeAction(method));
+
+        public void AddRenderSystem<T>(ComponentAction<TRenderContext, T> method) => AddSystem(MakeAction(method));
+
+        public void AddRenderSystem<T1, T2>(ComponentAction<TRenderContext, T1, T2> method) => AddSystem(MakeAction(method));
+
+        public void AddRenderSystem<T>(ParentAction<TRenderContext, T> method) where T : struct => AddSystem(MakeAction(method));
+
+
+        public void Render(TRenderContext context)
         {
-            foreach (var system in _systems) system.Invoke(context);
+            foreach (var system in _renderSystems) system.Invoke(context);
         }
     }
 }
