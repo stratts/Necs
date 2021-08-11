@@ -42,6 +42,7 @@ namespace Necs
         private Dictionary<ulong, int> _treePriority = new();
         private IComparer<ComponentInfo> _comparer;
         private Dictionary<ulong, ulong> _treeMap = new();
+        private Dictionary<ulong, ulong> _parentMap = new();
 
         public int Count => _count;
         public Span<ComponentInfo> Infos => _info.AsSpan(0, _count);
@@ -57,18 +58,37 @@ namespace Necs
 
         private int CompareInfo(ComponentInfo a, ComponentInfo b) => a.Priority.CompareTo(b.Priority);
 
-        public ref ComponentInfo GetInfo(ulong id) => ref _info[Infos.IndexOf(new ComponentInfo() { Id = id })];
+        public int? GetIndexOf(ulong id) => GetIndexOf(_treeMap[id], info => info.Id == id);
 
-        public ref T GetData(ulong id) => ref _data[Infos.IndexOf(new ComponentInfo() { Id = id })];
+        public ref ComponentInfo GetInfo(ulong id)
+        {
+            var idx = GetIndexOf(id);
+            if (idx != null) return ref _info[idx.Value];
+            throw new ArgumentException("Component with that ID not found in list");
+        }
 
-        public int? GetByParent(ulong id) => GetIndexOf(_treeMap[id], c => c.ParentId == id);
+        public ref T GetData(ulong id)
+        {
+            var idx = GetIndexOf(id);
+            if (idx != null) return ref _data[idx.Value];
+            throw new ArgumentException("Component with that ID not found in list");
+        }
+
+        public int? GetByParent(ulong parentId)
+        {
+            var present = _parentMap.TryGetValue(parentId, out var id);
+            if (!present) return null;
+            return GetIndexOf(_treeMap[id], info => info.Id == id);
+        }
 
         private int? GetIndexOf(ulong tree, Predicate<ComponentInfo> match)
         {
             var treeIdx = Infos.BinarySearch(new TreeComparable(tree));
+            if (treeIdx < 0) throw new ArgumentException("Binary search for tree failed! Tree not found or list not sorted yet");
+            while (treeIdx - 1 >= 0 && _info[treeIdx - 1].Tree == tree) treeIdx--;
             for (int i = treeIdx; i < _count; i++)
             {
-                if (match(Infos[i])) return i;
+                if (match(_info[i])) return i;
                 else if (_info[i].Tree != tree) break;
             }
 
@@ -78,6 +98,7 @@ namespace Necs
         public void Add(ComponentInfo info, T data)
         {
             _treeMap[info.Id] = info.Tree;
+            if (info.ParentId != null) _parentMap[info.ParentId.Value] = info.Id;
 
             var idx = Infos.BinarySearch(info, _comparer);
 
@@ -107,8 +128,12 @@ namespace Necs
 
         public void Remove(ulong id)
         {
-            var i = Infos.IndexOf(new ComponentInfo() { Id = id });
+            var idx = GetIndexOf(id);
+            if (idx == null) return;
+            var i = idx.Value;
+
             _treeMap.Remove(id);
+            if (_info[i].ParentId != null) _parentMap.Remove(_info[i].Id);
 
             Array.Copy(_info, i + 1, _info, i, _count - i);
             Array.Copy(_data, i + 1, _data, i, _count - i);
@@ -122,6 +147,9 @@ namespace Necs
 
             var info = Infos[oldIdx];
             var data = Data[oldIdx];
+
+            _treeMap[info.Id] = info.Tree;
+            if (info.ParentId != null) _parentMap[info.ParentId.Value] = info.Id;
 
             var lower = Infos.Slice(0, oldIdx);
             var upper = Infos.Slice(oldIdx + 1);
@@ -158,7 +186,6 @@ namespace Necs
 
             _info[newIdx] = info;
             _data[newIdx] = data;
-            _treeMap[info.Id] = info.Tree;
         }
 
         public void CopyTo(IComponentList dest)
