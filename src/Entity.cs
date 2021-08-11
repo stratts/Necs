@@ -16,19 +16,20 @@ namespace Necs
         public Entity()
         {
             var info = ComponentInfo.Create();
+            info.Name = GetType().Name;
             info.IsEntity = true;
             Id = info.Id;
             _context.AddEntity(info);
         }
 
-        public void AddChild(Entity child)
+        public virtual void AddChild(Entity child)
         {
             _context.AddEntity(child);
             _context.AddComponentToEntity(Id, child.Id);
             _children.Add(child);
         }
 
-        public void RemoveChild(Entity child)
+        public virtual void RemoveChild(Entity child)
         {
             _context.RemoveComponentFromEntity(Id, child.Id);
             _children.Remove(child);
@@ -42,8 +43,7 @@ namespace Necs
 
         public void SetContext(EcsContext context, bool copy = true)
         {
-            if (_context == context) return;
-            if (copy) _context.CopyTo(context);
+            if (copy && _context != context) _context.CopyTo(context);
             _context = context;
             foreach (var child in _children) child.SetContext(context, false);
         }

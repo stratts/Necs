@@ -8,6 +8,7 @@ namespace Necs
     {
         private static ulong _id = 0;
 
+        public string Name;
         public ulong Id;
         public ulong? ParentId;
         public ulong Priority;
@@ -20,6 +21,7 @@ namespace Necs
         {
             var i = new ComponentInfo()
             {
+                Name = "",
                 Id = _id,
                 Priority = _id,
                 Tree = _id,
