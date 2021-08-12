@@ -88,6 +88,19 @@ namespace Necs.Tests
         }
 
         [Fact]
+        public void Test_AddNested()
+        {
+            var c = new Entity();
+            var d = new Entity();
+            var e = new Entity();
+
+            c.AddChild(d);
+            e.AddChild(c);
+
+            Assert.Equal(e.Info.Tree, d.Info.Tree);
+        }
+
+        [Fact]
         public void Test_TreeOrder()
         {
             var e1 = new Entity();
@@ -108,6 +121,40 @@ namespace Necs.Tests
             Assert.Equal(c1.Id, infos[1].Id);
             Assert.Equal(d1.Id, infos[2].Id);
             Assert.Equal(d2.Id, infos[3].Id);
+        }
+
+        [Fact]
+        public void Test_TreeSet()
+        {
+            var a = new Entity();
+            var b = new Entity();
+            var c = new Entity();
+            var d = new Entity();
+            var e = new Entity();
+
+            Assert.Equal((ulong)0, a.Info.Tree);
+
+            a.AddChild(b);
+            Assert.Equal((ulong)0, b.Info.Tree);
+
+            c.AddChild(d);
+            Assert.Equal((ulong)2, d.Info.Tree);
+            Assert.Equal(1, c.Data.Children.Count);
+
+            e.AddChild(c);
+            Assert.Equal(1, e.Data.Children.Count);
+            Assert.Equal(e.Context, c.Context);
+            Assert.Equal(e.Context, d.Context);
+            Assert.Equal(e.Info.Tree, c.Info.Tree);
+            Assert.Equal(e.Info.Tree, d.Info.Tree);
+
+            b.AddChild(e);
+
+            Assert.Equal((ulong)0, a.Info.Tree);
+            Assert.Equal((ulong)0, b.Info.Tree);
+            Assert.Equal((ulong)0, c.Info.Tree);
+            Assert.Equal((ulong)0, d.Info.Tree);
+            Assert.Equal((ulong)0, e.Info.Tree);
         }
 
         [Fact]

@@ -117,14 +117,15 @@ namespace Necs
                         }
                     }
                     GetList(componentId).Resort(componentId);
-                    UpdateTree(info);
+                    UpdateTree(componentId);
                 }
                 else GetList(componentId).Resort(componentId);
             });
         }
 
-        internal void UpdateTree(ComponentInfo entityInfo)
+        internal void UpdateTree(ulong entityId)
         {
+            var entityInfo = GetEntityInfo(entityId);
             var data = GetEntityData(entityInfo.Id);
             data.Branches.Clear();
 
@@ -149,7 +150,7 @@ namespace Necs
                     }
 
                     GetList(id).Resort(id);
-                    UpdateTree(child);
+                    UpdateTree(id);
                 }
                 else
                 {
@@ -436,44 +437,25 @@ namespace Necs
                 var infos = list.Infos;
                 var data = list.Data;
 
-                ref ComponentInfo prevParent = ref infos[0];
-                ref T prevData = ref data[0];
-
-                ulong prevTree, prevBranch;
-                byte prevDepth;
-                ulong mask;
-
                 T none = default;
 
                 for (int i = 1; i < infos.Length; i++)
                 {
-                    prevTree = prevParent.Tree;
-                    prevBranch = prevParent.Branch;
-                    prevDepth = prevParent.TreeDepth;
-                    mask = prevDepth == 0 ? 0 : ulong.MaxValue << (8 * (8 - prevDepth));
-
                     ref var info = ref infos[i];
                     ref var d = ref data[i];
 
-                    if (info.Tree != prevTree) method.Invoke(ctx, ref d, ref none, false);
-                    else if (info.TreeDepth > prevDepth && (info.Branch & mask) == (prevBranch & mask)) method.Invoke(ctx, ref d, ref prevData, true);
-                    else
+                    for (int j = i - 1; j >= 0; j--)
                     {
-                        for (int j = i - 2; j >= 0; j--)
+                        var prev = infos[j];
+                        if (info.TreeDepth > prev.TreeDepth && info.IsDescendantOf(ref prev))
                         {
-                            var prev = infos[j];
-                            prevDepth = prev.TreeDepth;
-                            mask = prevDepth == 0 ? 0 : ulong.MaxValue << (8 * (8 - prevDepth));
-                            if (info.TreeDepth > prevDepth && (info.Branch & mask) == (prev.Branch & mask))
-                            {
-                                method.Invoke(ctx, ref d, ref data[j], true);
-                                break;
-                            }
-                            else if (info.Tree != prev.Tree)
-                            {
-                                method.Invoke(ctx, ref d, ref none, false);
-                                break;
-                            }
+                            method.Invoke(ctx, ref d, ref data[j], true);
+                            break;
+                        }
+                        else if (info.Tree != prev.Tree)
+                        {
+                            method.Invoke(ctx, ref d, ref none, false);
+                            break;
                         }
                     }
                 }

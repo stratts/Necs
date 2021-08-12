@@ -8,6 +8,7 @@ namespace Necs
         private List<Entity> _children = new();
 
         public ref ComponentInfo Info => ref _context.GetEntityInfo(Id);
+        internal EntityData Data => _context.GetEntityData(Id);
 
         internal EcsContext Context => _context;
 
@@ -46,7 +47,8 @@ namespace Necs
 
         internal void SetContext(EcsContext context, bool copy = true)
         {
-            if (copy && _context != context) _context.CopyTo(context);
+            if (_context == context) return;
+            if (copy) _context.CopyTo(context);
             _context = context;
             foreach (var child in _children) child.SetContext(context, false);
         }
