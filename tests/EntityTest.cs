@@ -87,6 +87,57 @@ namespace Necs.Tests
 
         }
 
+        [Fact]
+        public void Test_TreeOrder()
+        {
+            var e1 = new Entity();
+
+            var c1 = new Entity();
+
+            var d1 = new Entity();
+            c1.AddChild(d1);
+
+            var d2 = new Entity();
+            c1.AddChild(d2);
+
+            e1.AddChild(c1);
+
+            var infos = e1.Context.GetList<EntityData>().Infos;
+
+            Assert.Equal(e1.Id, infos[0].Id);
+            Assert.Equal(c1.Id, infos[1].Id);
+            Assert.Equal(d1.Id, infos[2].Id);
+            Assert.Equal(d2.Id, infos[3].Id);
+        }
+
+        [Fact]
+        public void Test_Descendents()
+        {
+            var e1 = new Entity();
+
+            var c1 = new Entity();
+
+            var d1 = new Entity();
+            c1.AddChild(d1);
+
+            var d2 = new Entity();
+            c1.AddChild(d2);
+
+            e1.AddChild(c1);
+
+            Assert.True(d2.Info.IsDescendantOf(ref c1.Info));
+            Assert.True(d2.Info.IsDescendantOf(ref e1.Info));
+            Assert.True(d1.Info.IsDescendantOf(ref c1.Info));
+            Assert.True(d1.Info.IsDescendantOf(ref e1.Info));
+            Assert.True(c1.Info.IsDescendantOf(ref e1.Info));
+
+            Assert.False(d2.Info.IsDescendantOf(ref d1.Info));
+            Assert.False(d1.Info.IsDescendantOf(ref d2.Info));
+            Assert.False(c1.Info.IsDescendantOf(ref d1.Info));
+            Assert.False(c1.Info.IsDescendantOf(ref d2.Info));
+            Assert.False(e1.Info.IsDescendantOf(ref c1.Info));
+        }
+
         private Entity CreateEntityWithChildren()
         {
             var e1 = new Entity();
