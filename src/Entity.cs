@@ -7,7 +7,7 @@ namespace Necs
         private EcsContext _context = new EcsContext();
         private List<Entity> _children = new();
 
-        public ComponentInfo Info => _context.GetEntityInfo(Id);
+        public ref ComponentInfo Info => ref _context.GetEntityInfo(Id);
 
         internal EcsContext Context => _context;
 
@@ -35,13 +35,16 @@ namespace Necs
             _children.Remove(child);
         }
 
-        public void AddComponent<T>(T component) => _context.AddComponentToEntity(Id, component);
+        public void AddComponent<T>(T component)
+        {
+            _context.AddComponentToEntity(Id, component);
+        }
 
         public ref T GetComponent<T>() => ref _context.GetEntityComponent<T>(Id);
 
         public void SetPriority(ulong priority) => _context.UpdatePriority(Id, priority);
 
-        public void SetContext(EcsContext context, bool copy = true)
+        internal void SetContext(EcsContext context, bool copy = true)
         {
             if (copy && _context != context) _context.CopyTo(context);
             _context = context;

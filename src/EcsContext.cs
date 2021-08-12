@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using System.Threading;
 
 [assembly: InternalsVisibleTo("Necs.Debug"), InternalsVisibleTo("Necs.Benchmark"), InternalsVisibleTo("Necs.Tests")]
 
@@ -8,18 +9,24 @@ namespace Necs
 {
     public class EcsContext
     {
+        protected bool Lock = false;
+
         private Dictionary<ulong, IComponentList> _map = new();
+        protected Queue<Action> _deferred = new();
         protected List<IComponentList> _lists = new();
 
         internal EcsContext() { }
 
         // Public methods
 
-        public void AddEntity(Entity entity) => entity.SetContext(this);
+        public void AddEntity(Entity entity)
+        {
+            Do(() => entity.SetContext(this));
+        }
 
         public void RemoveEntity(Entity entity)
         {
-            RemoveComponentTree(entity.Id);
+            Do(() => RemoveComponentTree(entity.Id));
         }
 
         public ref ComponentInfo GetEntityInfo(ulong entityId)
@@ -83,34 +90,37 @@ namespace Necs
 
         internal void AddComponentToEntity(ulong entityId, ulong componentId)
         {
-            ref var info = ref GetInfo(componentId);
-            if (info.ParentId != null) throw new ArgumentException("Component already has a parent, cannot add to entity");
-
-            ref var entityInfo = ref GetEntityInfo(entityId);
-
-            var entityData = GetList<EntityData>().GetData(entityId);
-            entityData.Children.Add(componentId);
-
-            info.ParentId = entityId;
-            info.Tree = entityInfo.Tree;
-            info.TreeDepth = info.IsEntity ? (byte)(entityInfo.TreeDepth + 1) : entityInfo.TreeDepth;
-            info.Branch = entityInfo.Branch;
-
-            if (info.IsEntity)
+            Do(() =>
             {
-                for (byte i = 1; i <= byte.MaxValue; i++)
+                ref var info = ref GetInfo(componentId);
+                if (info.ParentId != null) throw new ArgumentException("Component already has a parent, cannot add to entity");
+
+                ref var entityInfo = ref GetEntityInfo(entityId);
+
+                var entityData = GetList<EntityData>().GetData(entityId);
+                entityData.Children.Add(componentId);
+
+                info.ParentId = entityId;
+                info.Tree = entityInfo.Tree;
+                info.TreeDepth = info.IsEntity ? (byte)(entityInfo.TreeDepth + 1) : entityInfo.TreeDepth;
+                info.Branch = entityInfo.Branch;
+
+                if (info.IsEntity)
                 {
-                    if (!entityData.Branches.ContainsValue(i))
+                    for (byte i = 1; i <= byte.MaxValue; i++)
                     {
-                        entityData.Branches[componentId] = i;
-                        info.Branch |= ((ulong)i) << (8 * (7 - entityInfo.TreeDepth));
-                        break;
+                        if (!entityData.Branches.ContainsValue(i))
+                        {
+                            entityData.Branches[componentId] = i;
+                            info.Branch |= ((ulong)i) << (8 * (7 - entityInfo.TreeDepth));
+                            break;
+                        }
                     }
+                    GetList(componentId).Resort(componentId);
+                    UpdateTree(info);
                 }
-                GetList(componentId).Resort(componentId);
-                UpdateTree(info);
-            }
-            else GetList(componentId).Resort(componentId);
+                else GetList(componentId).Resort(componentId);
+            });
         }
 
         internal void UpdateTree(ComponentInfo entityInfo)
@@ -124,6 +134,7 @@ namespace Necs
 
                 child.TreeDepth = child.IsEntity ? (byte)(entityInfo.TreeDepth + 1) : entityInfo.TreeDepth;
                 child.Tree = entityInfo.Tree;
+                child.Branch = entityInfo.Branch;
 
                 if (child.IsEntity)
                 {
@@ -142,7 +153,6 @@ namespace Necs
                 }
                 else
                 {
-                    child.Branch = entityInfo.Branch;
                     GetList(id).Resort(id);
                 }
             }
@@ -150,16 +160,19 @@ namespace Necs
 
         internal void RemoveComponentFromEntity(ulong entityId, ulong componentId)
         {
-            var entityData = GetList<EntityData>().GetData(entityId);
-            entityData.Children.Remove(componentId);
-            entityData.Branches.Remove(componentId);
+            Do(() =>
+            {
+                var entityData = GetList<EntityData>().GetData(entityId);
+                entityData.Children.Remove(componentId);
+                entityData.Branches.Remove(componentId);
 
-            ref var info = ref GetInfo(componentId);
-            info.ParentId = null;
-            info.Tree = info.Id;
-            info.TreeDepth = 0;
+                ref var info = ref GetInfo(componentId);
+                info.ParentId = null;
+                info.Tree = info.Id;
+                info.TreeDepth = 0;
 
-            RemoveComponentTree(componentId);
+                RemoveComponentTree(componentId);
+            });
         }
 
         internal ref T GetEntityComponent<T>(ulong entityId)
@@ -189,20 +202,29 @@ namespace Necs
 
         internal void AddComponent<T>(ComponentInfo info, T component)
         {
-            var list = GetList<T>();
-            list.Add(info, component);
-            _map[info.Id] = list;
+            Do(() =>
+            {
+                var list = GetList<T>();
+                list.Add(info, component);
+                _map[info.Id] = list;
+            });
         }
 
         internal void RemoveComponent(ulong id)
         {
-            GetList(id).Remove(id);
-            _map.Remove(id);
+            Do(() =>
+            {
+                GetList(id).Remove(id);
+                _map.Remove(id);
+            });
         }
 
         internal void RemoveComponentTree(ulong id)
         {
-            foreach (var treeId in GetTree(id)) RemoveComponent(treeId);
+            Do(() =>
+            {
+                foreach (var treeId in GetTree(id)) RemoveComponent(treeId);
+            });
         }
 
         internal Span<T> GetComponents<T>() => GetList<T>().Data;
@@ -226,6 +248,12 @@ namespace Necs
             return newList;
         }
 
+        protected void Do(Action action)
+        {
+            if (!Lock) action();
+            else _deferred.Enqueue(action);
+        }
+
         protected IComponentList GetList(ulong componentId)
         {
             var present = _map.TryGetValue(componentId, out var list);
@@ -245,40 +273,84 @@ namespace Necs
 
     public delegate void ParentAction<TUpdateContext, T>(TUpdateContext context, ref T a, ref T parent, bool hasParent) where T : struct;
 
+    public delegate void ParentAction<TUpdateContext, T1, T2>(TUpdateContext context, ref T1 a, ref T2 b, ref T2 parent, bool hasParent) where T2 : struct;
+
     public delegate void SpanConsumer<TUpdateContext, T>(TUpdateContext context, Span<T> components);
 
-    public interface IComponentSystem<TUpdateContext, T>
+    public interface IComponentSystem<TUpdateContext>
+    {
+        void BeforeProcess(TUpdateContext context) { }
+        void AfterProcess(TUpdateContext context) { }
+    }
+
+    public interface IComponentSystem<TUpdateContext, T> : IComponentSystem<TUpdateContext>
     {
         void Process(TUpdateContext context, ref T component);
     }
 
-    public interface IComponentSpanSystem<TUpdateContext, T>
+    public interface IComponentSpanSystem<TUpdateContext, T> : IComponentSystem<TUpdateContext>
     {
         void Process(TUpdateContext context, Span<T> components);
     }
 
-    public interface IComponentParentSystem<TUpdateContext, T> where T : struct
+    public interface IComponentParentSystem<TUpdateContext, T> : IComponentSystem<TUpdateContext> where T : struct
     {
         void Process(TUpdateContext context, ref T a, ref T parent, bool hasParent);
     }
 
-    public interface IComponentSystem<TUpdateContext, T1, T2>
+    public interface IComponentParentSystem<TUpdateContext, T1, T2> : IComponentSystem<TUpdateContext> where T2 : struct
+    {
+        void Process(TUpdateContext context, ref T1 a, ref T2 b, ref T2 parent, bool hasParent);
+    }
+
+    public interface IComponentSystem<TUpdateContext, T1, T2> : IComponentSystem<TUpdateContext>
     {
         void Process(TUpdateContext context, ref T1 a, ref T2 b);
     }
 
+    internal class SystemDef<TContext>
+    {
+        private Action<TContext>? _beforeProcess;
+        private Action<TContext> _process;
+        private Action<TContext>? _afterProcess;
+
+        public SystemDef(Action<TContext> process, Action<TContext>? before = null, Action<TContext>? after = null)
+        {
+            _beforeProcess = before;
+            _process = process;
+            _afterProcess = after;
+        }
+
+        public void Process(TContext context)
+        {
+            _beforeProcess?.Invoke(context);
+            _process.Invoke(context);
+            _afterProcess?.Invoke(context);
+        }
+    }
+
     public class EcsContext<TUpdateContext> : EcsContext
     {
-        private List<Action<TUpdateContext>> _systems = new();
+        private List<SystemDef<TUpdateContext>> _systems = new();
 
-        private void AddSystem(Action<TUpdateContext> action) => _systems.Add(action);
+        private void AddSystem(Action<TUpdateContext> action, Action<TUpdateContext>? before, Action<TUpdateContext>? after) => _systems.Add(new(action, before, after));
 
+        private void AddSystem(Action<TUpdateContext> action) => _systems.Add(new(action));
 
-        public void AddSystem<T>(IComponentSystem<TUpdateContext, T> system) => AddSystem<T>(system.Process);
+        public void AddSystem<T>(IComponentSpanSystem<TUpdateContext, T> system) =>
+          AddSystem(MakeAction<TUpdateContext, T>(system.Process), system.BeforeProcess, system.AfterProcess);
 
-        public void AddSystem<T>(IComponentParentSystem<TUpdateContext, T> system) where T : struct => AddSystem<T>(system.Process);
+        public void AddSystem<T>(IComponentSystem<TUpdateContext, T> system) =>
+            AddSystem(MakeAction<TUpdateContext, T>(system.Process), system.BeforeProcess, system.AfterProcess);
 
-        public void AddSystem<T1, T2>(IComponentSystem<TUpdateContext, T1, T2> system) => AddSystem<T1, T2>(system.Process);
+        public void AddSystem<T>(IComponentParentSystem<TUpdateContext, T> system) where T : struct =>
+            AddSystem(MakeAction<TUpdateContext, T>(system.Process), system.BeforeProcess, system.AfterProcess);
+
+        public void AddSystem<T1, T2>(IComponentParentSystem<TUpdateContext, T1, T2> system) where T2 : struct =>
+            AddSystem(MakeAction<TUpdateContext, T1, T2>(system.Process), system.BeforeProcess, system.AfterProcess);
+
+        public void AddSystem<T1, T2>(IComponentSystem<TUpdateContext, T1, T2> system) =>
+            AddSystem(MakeAction<TUpdateContext, T1, T2>(system.Process), system.BeforeProcess, system.AfterProcess);
 
         public void AddSystem<T>(SpanConsumer<TUpdateContext, T> method) => AddSystem(MakeAction(method));
 
@@ -290,9 +362,11 @@ namespace Necs
 
         public void Update(TUpdateContext context)
         {
-            foreach (var system in _systems) system.Invoke(context);
+            while (_deferred.TryDequeue(out var action)) action?.Invoke();
+            Lock = true;
+            foreach (var system in _systems) system.Process(context);
+            Lock = false;
         }
-
 
         protected Action<TContext> MakeAction<TContext, T>(SpanConsumer<TContext, T> method)
         {
@@ -343,7 +417,7 @@ namespace Necs
                             offset = j + 1;
                             break;
                         }
-                        else if (tree2 != tree)
+                        else if (tree2 > tree)
                         {
                             offset = j;
                             break;
@@ -352,6 +426,7 @@ namespace Necs
                 }
             });
         }
+
 
         protected Action<TContext> MakeAction<TContext, T>(ParentAction<TContext, T> method) where T : struct
         {
@@ -401,9 +476,60 @@ namespace Necs
                             }
                         }
                     }
+                }
+            });
+        }
 
-                    prevParent = ref info;
-                    prevData = ref d;
+        protected Action<TContext> MakeAction<TContext, T1, T2>(ParentAction<TContext, T1, T2> method) where T2 : struct
+        {
+            return new(ctx =>
+            {
+                var list1 = GetList<T1>();
+                var list2 = GetList<T2>();
+
+                var info1 = list1.Infos;
+                var info2 = list2.Infos;
+
+                var offset = 0;
+
+                T2 empty = default;
+
+                for (int i = 0; i < list1.Count; i++)
+                {
+                    var tree = info1[i].Tree;
+                    var parent = info1[i].ParentId;
+
+                    for (int j = offset; j < list2.Count; j++)
+                    {
+                        var tree2 = info2[j].Tree;
+                        var parent2 = info2[j].ParentId;
+                        if (parent2 == parent)
+                        {
+                            var desc = info2[j];
+                            for (int k = j - 1; k >= 0; k--)
+                            {
+                                ref var prev = ref info2[k];
+                                if (desc.IsDescendantOf(ref prev))
+                                {
+                                    method.Invoke(ctx, ref list1.Data[i], ref list2.Data[j], ref list2.Data[k], true);
+                                    break;
+                                }
+                                else if (prev.Tree != desc.Tree)
+                                {
+                                    method.Invoke(ctx, ref list1.Data[i], ref list2.Data[j], ref empty, false);
+                                    break;
+                                }
+                            }
+
+                            offset = j + 1;
+                            break;
+                        }
+                        else if (tree2 > tree)
+                        {
+                            offset = j;
+                            break;
+                        }
+                    }
                 }
             });
         }
@@ -411,14 +537,24 @@ namespace Necs
 
     public class EcsContext<TUpdateContext, TRenderContext> : EcsContext<TUpdateContext>
     {
-        private List<Action<TRenderContext>> _renderSystems = new();
+        private List<SystemDef<TRenderContext>> _renderSystems = new();
 
-        private void AddSystem(Action<TRenderContext> action) => _renderSystems.Add(action);
+        private void AddSystem(Action<TRenderContext> action, Action<TRenderContext>? before, Action<TRenderContext>? after) => _renderSystems.Add(new(action, before, after));
+
+        private void AddSystem(Action<TRenderContext> action) => _renderSystems.Add(new(action));
 
 
-        public void AddRenderSystem<T>(IComponentSystem<TRenderContext, T> system) => AddRenderSystem<T>(system.Process);
+        public void AddRenderSystem<T>(IComponentSpanSystem<TRenderContext, T> system) =>
+          AddSystem(MakeAction<TRenderContext, T>(system.Process), system.BeforeProcess, system.AfterProcess);
 
-        public void AddRenderSystem<T1, T2>(IComponentSystem<TRenderContext, T1, T2> system) => AddRenderSystem<T1, T2>(system.Process);
+        public void AddRenderSystem<T>(IComponentSystem<TRenderContext, T> system) =>
+            AddSystem(MakeAction<TRenderContext, T>(system.Process), system.BeforeProcess, system.AfterProcess);
+
+        public void AddRenderSystem<T>(IComponentParentSystem<TRenderContext, T> system) where T : struct =>
+            AddSystem(MakeAction<TRenderContext, T>(system.Process), system.BeforeProcess, system.AfterProcess);
+
+        public void AddRenderSystem<T1, T2>(IComponentSystem<TRenderContext, T1, T2> system) =>
+            AddSystem(MakeAction<TRenderContext, T1, T2>(system.Process), system.BeforeProcess, system.AfterProcess);
 
         public void AddRenderSystem<T>(SpanConsumer<TRenderContext, T> method) => AddSystem(MakeAction(method));
 
@@ -431,7 +567,7 @@ namespace Necs
 
         public void Render(TRenderContext context)
         {
-            foreach (var system in _renderSystems) system.Invoke(context);
+            foreach (var system in _renderSystems) system.Process(context);
         }
     }
 }
