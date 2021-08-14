@@ -264,98 +264,40 @@ namespace Necs
         }
     }
 
-    public delegate void ComponentAction<TUpdateContext, T>(TUpdateContext context, ref T a);
-
-    public delegate void ComponentAction<TUpdateContext, T1, T2>(TUpdateContext context, ref T1 a, ref T2 b);
-
-    public delegate void ParentAction<TUpdateContext, T>(TUpdateContext context, ref T a, ref T? parent, bool hasParent);
-
-    public delegate void ParentAction<TUpdateContext, T1, T2>(TUpdateContext context, ref T1 a, ref T2 b, ref T2? parent, bool hasParent);
-
-    public delegate void SpanConsumer<TUpdateContext, T>(TUpdateContext context, Span<T> components);
-
-    public interface IComponentSystem<TUpdateContext>
-    {
-        void BeforeProcess(TUpdateContext context) { }
-        void AfterProcess(TUpdateContext context) { }
-    }
-
-    public interface IComponentSystem<TUpdateContext, T> : IComponentSystem<TUpdateContext>
-    {
-        void Process(TUpdateContext context, ref T component);
-    }
-
-    public interface IComponentSpanSystem<TUpdateContext, T> : IComponentSystem<TUpdateContext>
-    {
-        void Process(TUpdateContext context, Span<T> components);
-    }
-
-    public interface IComponentParentSystem<TUpdateContext, T> : IComponentSystem<TUpdateContext>
-    {
-        void Process(TUpdateContext context, ref T a, ref T? parent, bool hasParent);
-    }
-
-    public interface IComponentParentSystem<TUpdateContext, T1, T2> : IComponentSystem<TUpdateContext>
-    {
-        void Process(TUpdateContext context, ref T1 a, ref T2 b, ref T2? parent, bool hasParent);
-    }
-
-    public interface IComponentSystem<TUpdateContext, T1, T2> : IComponentSystem<TUpdateContext>
-    {
-        void Process(TUpdateContext context, ref T1 a, ref T2 b);
-    }
-
-    internal class SystemDef<TContext>
-    {
-        private Action<TContext>? _beforeProcess;
-        private Action<TContext> _process;
-        private Action<TContext>? _afterProcess;
-
-        public SystemDef(Action<TContext> process, Action<TContext>? before = null, Action<TContext>? after = null)
-        {
-            _beforeProcess = before;
-            _process = process;
-            _afterProcess = after;
-        }
-
-        public void Process(TContext context)
-        {
-            _beforeProcess?.Invoke(context);
-            _process.Invoke(context);
-            _afterProcess?.Invoke(context);
-        }
-    }
 
     public class EcsContext<TUpdateContext> : EcsContext
     {
         private List<SystemDef<TUpdateContext>> _systems = new();
+        private protected SystemBuilder _builder;
+
+        public EcsContext() => _builder = new SystemBuilder(this);
 
         private void AddSystem(Action<TUpdateContext> action, Action<TUpdateContext>? before, Action<TUpdateContext>? after) => _systems.Add(new(action, before, after));
 
         private void AddSystem(Action<TUpdateContext> action) => _systems.Add(new(action));
 
         public void AddSystem<T>(IComponentSpanSystem<TUpdateContext, T> system) =>
-          AddSystem(MakeAction<TUpdateContext, T>(system.Process), system.BeforeProcess, system.AfterProcess);
+          AddSystem(_builder.MakeAction<TUpdateContext, T>(system.Process), system.BeforeProcess, system.AfterProcess);
 
         public void AddSystem<T>(IComponentSystem<TUpdateContext, T> system) =>
-            AddSystem(MakeAction<TUpdateContext, T>(system.Process), system.BeforeProcess, system.AfterProcess);
+            AddSystem(_builder.MakeAction<TUpdateContext, T>(system.Process), system.BeforeProcess, system.AfterProcess);
 
         public void AddSystem<T>(IComponentParentSystem<TUpdateContext, T> system) =>
-            AddSystem(MakeAction<TUpdateContext, T>(system.Process), system.BeforeProcess, system.AfterProcess);
+            AddSystem(_builder.MakeAction<TUpdateContext, T>(system.Process), system.BeforeProcess, system.AfterProcess);
 
         public void AddSystem<T1, T2>(IComponentParentSystem<TUpdateContext, T1, T2> system) =>
-            AddSystem(MakeAction<TUpdateContext, T1, T2>(system.Process), system.BeforeProcess, system.AfterProcess);
+            AddSystem(_builder.MakeAction<TUpdateContext, T1, T2>(system.Process), system.BeforeProcess, system.AfterProcess);
 
         public void AddSystem<T1, T2>(IComponentSystem<TUpdateContext, T1, T2> system) =>
-            AddSystem(MakeAction<TUpdateContext, T1, T2>(system.Process), system.BeforeProcess, system.AfterProcess);
+            AddSystem(_builder.MakeAction<TUpdateContext, T1, T2>(system.Process), system.BeforeProcess, system.AfterProcess);
 
-        public void AddSystem<T>(SpanConsumer<TUpdateContext, T> method) => AddSystem(MakeAction(method));
+        public void AddSystem<T>(SpanConsumer<TUpdateContext, T> method) => AddSystem(_builder.MakeAction(method));
 
-        public void AddSystem<T>(ComponentAction<TUpdateContext, T> method) => AddSystem(MakeAction(method));
+        public void AddSystem<T>(ComponentAction<TUpdateContext, T> method) => AddSystem(_builder.MakeAction(method));
 
-        public void AddSystem<T1, T2>(ComponentAction<TUpdateContext, T1, T2> method) => AddSystem(MakeAction(method));
+        public void AddSystem<T1, T2>(ComponentAction<TUpdateContext, T1, T2> method) => AddSystem(_builder.MakeAction(method));
 
-        public void AddSystem<T>(ParentAction<TUpdateContext, T> method) => AddSystem(MakeAction(method));
+        public void AddSystem<T>(ParentAction<TUpdateContext, T> method) => AddSystem(_builder.MakeAction(method));
 
         public void Update(TUpdateContext context)
         {
@@ -364,158 +306,13 @@ namespace Necs
             foreach (var system in _systems) system.Process(context);
             Lock = false;
         }
-
-        protected Action<TContext> MakeAction<TContext, T>(SpanConsumer<TContext, T> method)
-        {
-            return new(ctx =>
-            {
-                var components = GetList<T>();
-                method?.Invoke(ctx, components.Data);
-            });
-        }
-
-        protected Action<TContext> MakeAction<TContext, T>(ComponentAction<TContext, T> method)
-        {
-            return new(ctx =>
-            {
-                var components = GetList<T>();
-
-                foreach (ref var c in components.Data)
-                {
-                    method?.Invoke(ctx, ref c);
-                }
-            });
-        }
-
-        protected Action<TContext> MakeAction<TContext, T1, T2>(ComponentAction<TContext, T1, T2> method)
-        {
-            return new(ctx =>
-            {
-                var list1 = GetList<T1>();
-                var list2 = GetList<T2>();
-
-                var info1 = list1.Infos;
-                var info2 = list2.Infos;
-
-                var offset = 0;
-
-                for (int i = 0; i < list1.Count; i++)
-                {
-                    var tree = info1[i].Tree;
-                    var parent = info1[i].ParentId;
-
-                    for (int j = offset; j < list2.Count; j++)
-                    {
-                        var tree2 = info2[j].Tree;
-                        var parent2 = info2[j].ParentId;
-                        if (parent2 == parent)
-                        {
-                            method.Invoke(ctx, ref list1.Data[i], ref list2.Data[j]);
-                            offset = j + 1;
-                            break;
-                        }
-                        else if (tree2 > tree)
-                        {
-                            offset = j;
-                            break;
-                        }
-                    }
-                }
-            });
-        }
-
-
-        protected Action<TContext> MakeAction<TContext, T>(ParentAction<TContext, T> method)
-        {
-            return new(ctx =>
-            {
-                var list = GetList<T>();
-                var infos = list.Infos;
-                var data = list.Data;
-
-                T? none = default;
-
-                for (int i = 1; i < infos.Length; i++)
-                {
-                    ref var info = ref infos[i];
-                    ref var d = ref data[i];
-
-                    for (int j = i - 1; j >= 0; j--)
-                    {
-                        var prev = infos[j];
-                        if (info.TreeDepth > prev.TreeDepth && info.IsDescendantOf(ref prev))
-                        {
-                            method.Invoke(ctx, ref d, ref data[j]!, true);
-                            break;
-                        }
-                        else if (info.Tree != prev.Tree)
-                        {
-                            method.Invoke(ctx, ref d, ref none, false);
-                            break;
-                        }
-                    }
-                }
-            });
-        }
-
-        protected Action<TContext> MakeAction<TContext, T1, T2>(ParentAction<TContext, T1, T2> method)
-        {
-            return new(ctx =>
-            {
-                var list1 = GetList<T1>();
-                var list2 = GetList<T2>();
-
-                var info1 = list1.Infos;
-                var info2 = list2.Infos;
-
-                var offset = 0;
-
-                T2? empty = default;
-
-                for (int i = 0; i < list1.Count; i++)
-                {
-                    var tree = info1[i].Tree;
-                    var parent = info1[i].ParentId;
-
-                    for (int j = offset; j < list2.Count; j++)
-                    {
-                        var tree2 = info2[j].Tree;
-                        var parent2 = info2[j].ParentId;
-                        if (parent2 == parent)
-                        {
-                            var desc = info2[j];
-                            for (int k = j - 1; k >= 0; k--)
-                            {
-                                ref var prev = ref info2[k];
-                                if (desc.IsDescendantOf(ref prev))
-                                {
-                                    method.Invoke(ctx, ref list1.Data[i], ref list2.Data[j], ref list2.Data[k]!, true);
-                                    break;
-                                }
-                                else if (prev.Tree != desc.Tree)
-                                {
-                                    method.Invoke(ctx, ref list1.Data[i], ref list2.Data[j], ref empty, false);
-                                    break;
-                                }
-                            }
-
-                            offset = j + 1;
-                            break;
-                        }
-                        else if (tree2 > tree)
-                        {
-                            offset = j;
-                            break;
-                        }
-                    }
-                }
-            });
-        }
     }
+
 
     public class EcsContext<TUpdateContext, TRenderContext> : EcsContext<TUpdateContext>
     {
         private List<SystemDef<TRenderContext>> _renderSystems = new();
+
 
         private void AddSystem(Action<TRenderContext> action, Action<TRenderContext>? before, Action<TRenderContext>? after) => _renderSystems.Add(new(action, before, after));
 
@@ -523,24 +320,24 @@ namespace Necs
 
 
         public void AddRenderSystem<T>(IComponentSpanSystem<TRenderContext, T> system) =>
-          AddSystem(MakeAction<TRenderContext, T>(system.Process), system.BeforeProcess, system.AfterProcess);
+          AddSystem(_builder.MakeAction<TRenderContext, T>(system.Process), system.BeforeProcess, system.AfterProcess);
 
         public void AddRenderSystem<T>(IComponentSystem<TRenderContext, T> system) =>
-            AddSystem(MakeAction<TRenderContext, T>(system.Process), system.BeforeProcess, system.AfterProcess);
+            AddSystem(_builder.MakeAction<TRenderContext, T>(system.Process), system.BeforeProcess, system.AfterProcess);
 
         public void AddRenderSystem<T>(IComponentParentSystem<TRenderContext, T> system) =>
-            AddSystem(MakeAction<TRenderContext, T>(system.Process), system.BeforeProcess, system.AfterProcess);
+            AddSystem(_builder.MakeAction<TRenderContext, T>(system.Process), system.BeforeProcess, system.AfterProcess);
 
         public void AddRenderSystem<T1, T2>(IComponentSystem<TRenderContext, T1, T2> system) =>
-            AddSystem(MakeAction<TRenderContext, T1, T2>(system.Process), system.BeforeProcess, system.AfterProcess);
+            AddSystem(_builder.MakeAction<TRenderContext, T1, T2>(system.Process), system.BeforeProcess, system.AfterProcess);
 
-        public void AddRenderSystem<T>(SpanConsumer<TRenderContext, T> method) => AddSystem(MakeAction(method));
+        public void AddRenderSystem<T>(SpanConsumer<TRenderContext, T> method) => AddSystem(_builder.MakeAction(method));
 
-        public void AddRenderSystem<T>(ComponentAction<TRenderContext, T> method) => AddSystem(MakeAction(method));
+        public void AddRenderSystem<T>(ComponentAction<TRenderContext, T> method) => AddSystem(_builder.MakeAction(method));
 
-        public void AddRenderSystem<T1, T2>(ComponentAction<TRenderContext, T1, T2> method) => AddSystem(MakeAction(method));
+        public void AddRenderSystem<T1, T2>(ComponentAction<TRenderContext, T1, T2> method) => AddSystem(_builder.MakeAction(method));
 
-        public void AddRenderSystem<T>(ParentAction<TRenderContext, T> method) => AddSystem(MakeAction(method));
+        public void AddRenderSystem<T>(ParentAction<TRenderContext, T> method) => AddSystem(_builder.MakeAction(method));
 
 
         public void Render(TRenderContext context)
