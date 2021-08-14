@@ -243,6 +243,11 @@ namespace Necs
 
         public void SetTreePriority(ulong treeId, ulong priority)
         {
+            if (!_treePriority.ContainsKey(treeId))
+            {
+                _treePriority[treeId] = priority;
+                return;
+            }
             if (_treePriority[treeId] == priority) return;
 
             var span = GetTreeSpan(treeId);

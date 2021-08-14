@@ -29,36 +29,37 @@ namespace Necs
             Do(() => RemoveComponentTree(entity.Id));
         }
 
-        public ref ComponentInfo GetEntityInfo(ulong entityId)
-        {
-            var list = GetList<EntityData>();
-            return ref list.GetInfo(entityId);
-        }
-
-        public EntityData GetEntityData(ulong entityId)
-        {
-            var list = GetList<EntityData>();
-            return list.GetData(entityId);
-        }
-
         public void SetTreePriority(ulong tree, ulong priority)
         {
             Do(() =>
             {
                 foreach (var list in _lists)
                 {
-                    if (list.HasTree(tree)) list.SetTreePriority(tree, priority);
+                    list.SetTreePriority(tree, priority);
                 }
             });
         }
 
-        public void CopyTo(EcsContext target)
+        public int GetCount<T>() => GetList<T>().Count;
+
+        // Internal methods
+
+        internal void CopyTo(EcsContext target)
         {
             foreach (var list in _lists) target.CopyFromList(list);
         }
 
+        internal ref ComponentInfo GetEntityInfo(ulong entityId)
+        {
+            var list = GetList<EntityData>();
+            return ref list.GetInfo(entityId);
+        }
 
-        // Internal methods
+        internal EntityData GetEntityData(ulong entityId)
+        {
+            var list = GetList<EntityData>();
+            return list.GetData(entityId);
+        }
 
         internal void CopyFromList(IComponentList src)
         {
