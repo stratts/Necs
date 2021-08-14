@@ -268,9 +268,9 @@ namespace Necs
 
     public delegate void ComponentAction<TUpdateContext, T1, T2>(TUpdateContext context, ref T1 a, ref T2 b);
 
-    public delegate void ParentAction<TUpdateContext, T>(TUpdateContext context, ref T a, ref T parent, bool hasParent) where T : struct;
+    public delegate void ParentAction<TUpdateContext, T>(TUpdateContext context, ref T a, ref T? parent, bool hasParent);
 
-    public delegate void ParentAction<TUpdateContext, T1, T2>(TUpdateContext context, ref T1 a, ref T2 b, ref T2 parent, bool hasParent) where T2 : struct;
+    public delegate void ParentAction<TUpdateContext, T1, T2>(TUpdateContext context, ref T1 a, ref T2 b, ref T2? parent, bool hasParent);
 
     public delegate void SpanConsumer<TUpdateContext, T>(TUpdateContext context, Span<T> components);
 
@@ -290,14 +290,14 @@ namespace Necs
         void Process(TUpdateContext context, Span<T> components);
     }
 
-    public interface IComponentParentSystem<TUpdateContext, T> : IComponentSystem<TUpdateContext> where T : struct
+    public interface IComponentParentSystem<TUpdateContext, T> : IComponentSystem<TUpdateContext>
     {
-        void Process(TUpdateContext context, ref T a, ref T parent, bool hasParent);
+        void Process(TUpdateContext context, ref T a, ref T? parent, bool hasParent);
     }
 
-    public interface IComponentParentSystem<TUpdateContext, T1, T2> : IComponentSystem<TUpdateContext> where T2 : struct
+    public interface IComponentParentSystem<TUpdateContext, T1, T2> : IComponentSystem<TUpdateContext>
     {
-        void Process(TUpdateContext context, ref T1 a, ref T2 b, ref T2 parent, bool hasParent);
+        void Process(TUpdateContext context, ref T1 a, ref T2 b, ref T2? parent, bool hasParent);
     }
 
     public interface IComponentSystem<TUpdateContext, T1, T2> : IComponentSystem<TUpdateContext>
@@ -340,10 +340,10 @@ namespace Necs
         public void AddSystem<T>(IComponentSystem<TUpdateContext, T> system) =>
             AddSystem(MakeAction<TUpdateContext, T>(system.Process), system.BeforeProcess, system.AfterProcess);
 
-        public void AddSystem<T>(IComponentParentSystem<TUpdateContext, T> system) where T : struct =>
+        public void AddSystem<T>(IComponentParentSystem<TUpdateContext, T> system) =>
             AddSystem(MakeAction<TUpdateContext, T>(system.Process), system.BeforeProcess, system.AfterProcess);
 
-        public void AddSystem<T1, T2>(IComponentParentSystem<TUpdateContext, T1, T2> system) where T2 : struct =>
+        public void AddSystem<T1, T2>(IComponentParentSystem<TUpdateContext, T1, T2> system) =>
             AddSystem(MakeAction<TUpdateContext, T1, T2>(system.Process), system.BeforeProcess, system.AfterProcess);
 
         public void AddSystem<T1, T2>(IComponentSystem<TUpdateContext, T1, T2> system) =>
@@ -355,7 +355,7 @@ namespace Necs
 
         public void AddSystem<T1, T2>(ComponentAction<TUpdateContext, T1, T2> method) => AddSystem(MakeAction(method));
 
-        public void AddSystem<T>(ParentAction<TUpdateContext, T> method) where T : struct => AddSystem(MakeAction(method));
+        public void AddSystem<T>(ParentAction<TUpdateContext, T> method) => AddSystem(MakeAction(method));
 
         public void Update(TUpdateContext context)
         {
@@ -425,7 +425,7 @@ namespace Necs
         }
 
 
-        protected Action<TContext> MakeAction<TContext, T>(ParentAction<TContext, T> method) where T : struct
+        protected Action<TContext> MakeAction<TContext, T>(ParentAction<TContext, T> method)
         {
             return new(ctx =>
             {
@@ -433,7 +433,7 @@ namespace Necs
                 var infos = list.Infos;
                 var data = list.Data;
 
-                T none = default;
+                T? none = default;
 
                 for (int i = 1; i < infos.Length; i++)
                 {
@@ -445,7 +445,7 @@ namespace Necs
                         var prev = infos[j];
                         if (info.TreeDepth > prev.TreeDepth && info.IsDescendantOf(ref prev))
                         {
-                            method.Invoke(ctx, ref d, ref data[j], true);
+                            method.Invoke(ctx, ref d, ref data[j]!, true);
                             break;
                         }
                         else if (info.Tree != prev.Tree)
@@ -458,7 +458,7 @@ namespace Necs
             });
         }
 
-        protected Action<TContext> MakeAction<TContext, T1, T2>(ParentAction<TContext, T1, T2> method) where T2 : struct
+        protected Action<TContext> MakeAction<TContext, T1, T2>(ParentAction<TContext, T1, T2> method)
         {
             return new(ctx =>
             {
@@ -470,7 +470,7 @@ namespace Necs
 
                 var offset = 0;
 
-                T2 empty = default;
+                T2? empty = default;
 
                 for (int i = 0; i < list1.Count; i++)
                 {
@@ -489,7 +489,7 @@ namespace Necs
                                 ref var prev = ref info2[k];
                                 if (desc.IsDescendantOf(ref prev))
                                 {
-                                    method.Invoke(ctx, ref list1.Data[i], ref list2.Data[j], ref list2.Data[k], true);
+                                    method.Invoke(ctx, ref list1.Data[i], ref list2.Data[j], ref list2.Data[k]!, true);
                                     break;
                                 }
                                 else if (prev.Tree != desc.Tree)
@@ -528,7 +528,7 @@ namespace Necs
         public void AddRenderSystem<T>(IComponentSystem<TRenderContext, T> system) =>
             AddSystem(MakeAction<TRenderContext, T>(system.Process), system.BeforeProcess, system.AfterProcess);
 
-        public void AddRenderSystem<T>(IComponentParentSystem<TRenderContext, T> system) where T : struct =>
+        public void AddRenderSystem<T>(IComponentParentSystem<TRenderContext, T> system) =>
             AddSystem(MakeAction<TRenderContext, T>(system.Process), system.BeforeProcess, system.AfterProcess);
 
         public void AddRenderSystem<T1, T2>(IComponentSystem<TRenderContext, T1, T2> system) =>
@@ -540,7 +540,7 @@ namespace Necs
 
         public void AddRenderSystem<T1, T2>(ComponentAction<TRenderContext, T1, T2> method) => AddSystem(MakeAction(method));
 
-        public void AddRenderSystem<T>(ParentAction<TRenderContext, T> method) where T : struct => AddSystem(MakeAction(method));
+        public void AddRenderSystem<T>(ParentAction<TRenderContext, T> method) => AddSystem(MakeAction(method));
 
 
         public void Render(TRenderContext context)
