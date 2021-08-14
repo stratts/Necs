@@ -43,8 +43,6 @@ namespace Necs
 
         public ref T GetComponent<T>() => ref _context.GetEntityComponent<T>(Id);
 
-        public void SetPriority(ulong priority) => _context.UpdatePriority(Id, priority);
-
         internal void SetContext(EcsContext context, bool copy = true)
         {
             if (_context == context) return;

@@ -132,13 +132,11 @@ namespace Necs.Tests
             var d = new Entity();
             var e = new Entity();
 
-            Assert.Equal((ulong)0, a.Info.Tree);
-
             a.AddChild(b);
-            Assert.Equal((ulong)0, b.Info.Tree);
+            Assert.Equal(a.Info.Tree, b.Info.Tree);
 
             c.AddChild(d);
-            Assert.Equal((ulong)2, d.Info.Tree);
+            Assert.Equal(c.Info.Tree, d.Info.Tree);
             Assert.Equal(1, c.Data.Children.Count);
 
             e.AddChild(c);
@@ -150,11 +148,10 @@ namespace Necs.Tests
 
             b.AddChild(e);
 
-            Assert.Equal((ulong)0, a.Info.Tree);
-            Assert.Equal((ulong)0, b.Info.Tree);
-            Assert.Equal((ulong)0, c.Info.Tree);
-            Assert.Equal((ulong)0, d.Info.Tree);
-            Assert.Equal((ulong)0, e.Info.Tree);
+            Assert.Equal(a.Info.Tree, b.Info.Tree);
+            Assert.Equal(a.Info.Tree, c.Info.Tree);
+            Assert.Equal(a.Info.Tree, d.Info.Tree);
+            Assert.Equal(a.Info.Tree, e.Info.Tree);
         }
 
         [Fact]

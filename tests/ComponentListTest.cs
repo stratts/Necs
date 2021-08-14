@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Xunit;
 using Necs;
 
@@ -133,18 +134,55 @@ namespace Necs.Tests
             var i3 = infos[2].Id;
             var n0 = infos[3].Id;
 
-            infos[0].Tree = 998;
-            infos[1].Tree = 999;
-            infos[2].Tree = 1000;
-
+            list.GetInfo(i1).Tree = 998;
             list.Resort(i1);
+
+            list.GetInfo(i2).Tree = 999;
             list.Resort(i2);
+
+            list.GetInfo(i3).Tree = 1000;
             list.Resort(i3);
 
             Assert.Equal(i1, infos[97].Id);
             Assert.Equal(i2, infos[98].Id);
             Assert.Equal(i3, infos[99].Id);
             Assert.Equal(n0, infos[0].Id);
+        }
+
+        [Fact]
+        public void Test_TreePriority()
+        {
+            var list = CreateList();
+            var infos = new List<ComponentInfo>();
+
+            int n = 3;
+            int size = 5;
+
+            for (int i = 0; i < n; i++) infos.AddRange(CreateInfosWithTree(size, (ulong)i));
+            foreach (var info in infos) list.Add(info, new());
+
+            infos.Reverse();
+
+            for (int i = 0; i < n; i++) list.SetTreePriority((ulong)i, (ulong)(n - i));
+
+            for (int i = 0; i < n * size; i++)
+            {
+                Assert.Equal(infos[i].Tree, list.Infos[i].Tree);
+            }
+        }
+
+        [Fact]
+        public void Test_OrderedByTreeStable()
+        {
+            var list = CreateList();
+
+            for (int i = 0; i < 3; i++)
+            {
+                var info = AddInfoToList(list);
+                list.SetTreePriority(info.Tree, 0);
+            }
+
+            for (int i = 1; i < 3; i++) Assert.True(list.Infos[i - 1].Tree < list.Infos[i].Tree);
         }
 
         private ComponentList<Empty> CreateList() => new();
@@ -154,6 +192,18 @@ namespace Necs.Tests
             var info = ComponentInfo.Create();
             list.Add(info, new Empty());
             return info;
+        }
+
+        private List<ComponentInfo> CreateInfosWithTree(int count, ulong tree)
+        {
+            var list = new List<ComponentInfo>();
+            for (int i = 0; i < count; i++)
+            {
+                var info = ComponentInfo.Create();
+                info.Tree = tree;
+                list.Add(info);
+            }
+            return list;
         }
 
         private void AddInfosToList(ComponentList<Empty> list, int count)

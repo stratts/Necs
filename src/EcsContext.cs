@@ -41,19 +41,15 @@ namespace Necs
             return list.GetData(entityId);
         }
 
-        public void UpdatePriority(ulong entityId, ulong priority)
+        public void SetTreePriority(ulong tree, ulong priority)
         {
-            GetEntityInfo(entityId).Priority = priority;
-            var entityData = GetEntityData(entityId);
-            GetList<EntityData>().Resort(entityId);
-
-            foreach (var child in entityData.Children)
+            Do(() =>
             {
-                var list = GetList(child);
-                if (list.Type == typeof(EntityData)) continue;
-                list.GetInfo(child).Priority = priority;
-                list.Resort(child);
-            }
+                foreach (var list in _lists)
+                {
+                    if (list.HasTree(tree)) list.SetTreePriority(tree, priority);
+                }
+            });
         }
 
         public void CopyTo(EcsContext target)
