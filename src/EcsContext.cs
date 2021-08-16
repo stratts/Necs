@@ -7,7 +7,16 @@ using System.Threading;
 
 namespace Necs
 {
-    public class EcsContext
+    public interface IComponentSystem<TContext>
+    {
+        void BeforeProcess(TContext context) { }
+        void Process(TContext context, IEcsContext ecs);
+        void AfterProcess(TContext context) { }
+    }
+
+    public delegate void ComponentSystemAction<TContext>(TContext context, IEcsContext ecs);
+
+    public partial class EcsContext
     {
         protected bool Lock = false;
 
@@ -282,45 +291,28 @@ namespace Necs
 
     public class EcsContext<TUpdateContext> : EcsContext
     {
-        private List<SystemDef<TUpdateContext>> _systems = new();
-        private protected SystemBuilder _builder;
+        private List<Action<TUpdateContext>> _systems = new();
 
-        public EcsContext() => _builder = new SystemBuilder(this);
+        private void AddSystem(Action<TUpdateContext> action) => _systems.Add(action);
 
-        private void AddSystem(Action<TUpdateContext> action, Action<TUpdateContext>? before, Action<TUpdateContext>? after) => _systems.Add(new(action, before, after));
+        public void AddSystem(IComponentSystem<TUpdateContext> system)
+        {
+            var action = new Action<TUpdateContext>(ctx =>
+            {
+                system.BeforeProcess(ctx);
+                system.Process(ctx, this);
+                system.AfterProcess(ctx);
+            });
+            AddSystem(action);
+        }
 
-        private void AddSystem(Action<TUpdateContext> action) => _systems.Add(new(action));
-
-        public void AddSystem<T>(IComponentSpanSystem<TUpdateContext, T> system) =>
-          AddSystem(_builder.MakeAction<TUpdateContext, T>(system.Process), system.BeforeProcess, system.AfterProcess);
-
-        public void AddSystem<T>(IComponentSystem<TUpdateContext, T> system) =>
-            AddSystem(_builder.MakeAction<TUpdateContext, T>(system.Process), system.BeforeProcess, system.AfterProcess);
-
-        public void AddSystem<T>(IComponentParentSystem<TUpdateContext, T> system) =>
-            AddSystem(_builder.MakeAction<TUpdateContext, T>(system.Process), system.BeforeProcess, system.AfterProcess);
-
-        public void AddSystem<T1, T2>(IComponentParentSystem<TUpdateContext, T1, T2> system) =>
-            AddSystem(_builder.MakeAction<TUpdateContext, T1, T2>(system.Process), system.BeforeProcess, system.AfterProcess);
-
-        public void AddSystem<T1, T2>(IComponentSystem<TUpdateContext, T1, T2> system) =>
-            AddSystem(_builder.MakeAction<TUpdateContext, T1, T2>(system.Process), system.BeforeProcess, system.AfterProcess);
-
-        public void AddSystem<T>(SpanConsumer<TUpdateContext, T> method) => AddSystem(_builder.MakeAction(method));
-
-        public void AddSystem<T>(ComponentAction<TUpdateContext, T> method) => AddSystem(_builder.MakeAction(method));
-
-        public void AddSystem<T>(EntityAction<TUpdateContext, T> method) => AddSystem(_builder.MakeAction(method));
-
-        public void AddSystem<T1, T2>(ComponentAction<TUpdateContext, T1, T2> method) => AddSystem(_builder.MakeAction(method));
-
-        public void AddSystem<T>(ParentAction<TUpdateContext, T> method) => AddSystem(_builder.MakeAction(method));
+        public void AddSystem(ComponentSystemAction<TUpdateContext> action) => AddSystem(new Action<TUpdateContext>(ctx => action.Invoke(ctx, this)));
 
         public void Update(TUpdateContext context)
         {
             while (_deferred.TryDequeue(out var action)) action?.Invoke();
             Lock = true;
-            foreach (var system in _systems) system.Process(context);
+            foreach (var system in _systems) system.Invoke(context);
             Lock = false;
         }
     }
@@ -328,38 +320,26 @@ namespace Necs
 
     public class EcsContext<TUpdateContext, TRenderContext> : EcsContext<TUpdateContext>
     {
-        private List<SystemDef<TRenderContext>> _renderSystems = new();
+        private List<Action<TRenderContext>> _renderSystems = new();
 
+        private void AddRenderSystem(Action<TRenderContext> action) => _renderSystems.Add(action);
 
-        private void AddSystem(Action<TRenderContext> action, Action<TRenderContext>? before, Action<TRenderContext>? after) => _renderSystems.Add(new(action, before, after));
+        public void AddRenderSystem(IComponentSystem<TRenderContext> system)
+        {
+            var action = new Action<TRenderContext>(ctx =>
+            {
+                system.BeforeProcess(ctx);
+                system.Process(ctx, this);
+                system.AfterProcess(ctx);
+            });
+            AddRenderSystem(action);
+        }
 
-        private void AddSystem(Action<TRenderContext> action) => _renderSystems.Add(new(action));
-
-
-        public void AddRenderSystem<T>(IComponentSpanSystem<TRenderContext, T> system) =>
-          AddSystem(_builder.MakeAction<TRenderContext, T>(system.Process), system.BeforeProcess, system.AfterProcess);
-
-        public void AddRenderSystem<T>(IComponentSystem<TRenderContext, T> system) =>
-            AddSystem(_builder.MakeAction<TRenderContext, T>(system.Process), system.BeforeProcess, system.AfterProcess);
-
-        public void AddRenderSystem<T>(IComponentParentSystem<TRenderContext, T> system) =>
-            AddSystem(_builder.MakeAction<TRenderContext, T>(system.Process), system.BeforeProcess, system.AfterProcess);
-
-        public void AddRenderSystem<T1, T2>(IComponentSystem<TRenderContext, T1, T2> system) =>
-            AddSystem(_builder.MakeAction<TRenderContext, T1, T2>(system.Process), system.BeforeProcess, system.AfterProcess);
-
-        public void AddRenderSystem<T>(SpanConsumer<TRenderContext, T> method) => AddSystem(_builder.MakeAction(method));
-
-        public void AddRenderSystem<T>(ComponentAction<TRenderContext, T> method) => AddSystem(_builder.MakeAction(method));
-
-        public void AddRenderSystem<T1, T2>(ComponentAction<TRenderContext, T1, T2> method) => AddSystem(_builder.MakeAction(method));
-
-        public void AddRenderSystem<T>(ParentAction<TRenderContext, T> method) => AddSystem(_builder.MakeAction(method));
-
+        public void AddRenderSystem(ComponentSystemAction<TRenderContext> action) => AddRenderSystem(new Action<TRenderContext>(ctx => action.Invoke(ctx, this)));
 
         public void Render(TRenderContext context)
         {
-            foreach (var system in _renderSystems) system.Process(context);
+            foreach (var system in _renderSystems) system.Invoke(context);
         }
     }
 }

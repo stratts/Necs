@@ -289,7 +289,7 @@ namespace Necs
                     Data.Slice(span.End + 1, len).CopyTo(Data.Slice(span.Start, len));
                     tempInfo.CopyTo(Infos.Slice(target - count, count));
                     tempData.CopyTo(Data.Slice(target - count, count));
-                    Console.WriteLine($"Move {len} items");
+                    //Console.WriteLine($"Move {len} items");
                 }
             }
             else if (target < span.Start)
@@ -299,7 +299,7 @@ namespace Necs
                 Data.Slice(target, len).CopyTo(Data.Slice(target + count, len));
                 tempInfo.CopyTo(Infos.Slice(target, count));
                 tempData.CopyTo(Data.Slice(target, count));
-                Console.WriteLine($"Move {len} items");
+                //Console.WriteLine($"Move {len} items");
             }
             else return;
 
