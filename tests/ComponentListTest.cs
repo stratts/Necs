@@ -169,6 +169,13 @@ namespace Necs.Tests
             {
                 Assert.Equal(infos[i].Tree, list.Infos[i].Tree);
             }
+
+            for (int i = 0; i < n; i++) list.SetTreePriority((ulong)i, (ulong)(n - i) * 10);
+
+            for (int i = 0; i < n * size; i++)
+            {
+                Assert.Equal(infos[i].Tree, list.Infos[i].Tree);
+            }
         }
 
         [Fact]

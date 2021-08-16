@@ -7,7 +7,7 @@ namespace Necs
     {
         ComponentList<T>? Cast<T>();
         Span<ComponentInfo> Infos { get; }
-        void CopyTo(IComponentList dest);
+        void CopyTo(IComponentList dest, HashSet<ulong>? filter = null);
         Type Type { get; }
         ref ComponentInfo GetInfo(ulong id);
         void Remove(ulong id);
@@ -109,9 +109,14 @@ namespace Necs
 
         private (int Start, int End) GetTreeSpan(ulong tree)
         {
-            int start, end;
             var treeIdx = Infos.BinarySearch(new TreeComparable(tree, _treePriority));
             if (treeIdx < 0) throw new ArgumentException("Binary search for tree failed! Tree not found or list not sorted yet");
+            return GetTreeSpan(tree, treeIdx);
+        }
+
+        private (int Start, int End) GetTreeSpan(ulong tree, int treeIdx)
+        {
+            int start, end;
             for (start = treeIdx; start - 1 >= 0 && _info[start - 1].Tree == tree; start--) ;
             for (end = treeIdx; end + 1 < _count && _info[end + 1].Tree == tree; end++) ;
             return (start, end);
@@ -121,7 +126,14 @@ namespace Necs
         {
             var tree = _treeMap[id];
             var treeIdx = Infos.BinarySearch(new TreeComparable(tree, _treePriority, id));
-            if (treeIdx < 0) throw new ArgumentException("Binary search for tree failed! Tree not found or list not sorted yet");
+            if (treeIdx < 0)
+            {
+                for (int i = 0; i < _count; i++)
+                {
+                    if (_info[i].Id == id) throw new Exception($"ID found at index {i}, but binary search failed. List not sorted properly!");
+                }
+                throw new ArgumentException("ID not found in list");
+            }
             while (treeIdx - 1 >= 0)
             {
                 if (_info[treeIdx - 1].Id == id) return treeIdx - 1;
@@ -176,6 +188,8 @@ namespace Necs
             if (idx == null) return;
             var i = idx.Value;
 
+            var (treeStart, treeEnd) = GetTreeSpan(_treeMap[id], i);
+            if (treeStart == treeEnd) _treePriority.Remove(_treeMap[id]);
             _treeMap.Remove(id);
             if (_info[i].ParentId != null) _parentMap.Remove(_info[i].Id);
 
@@ -243,11 +257,6 @@ namespace Necs
 
         public void SetTreePriority(ulong treeId, ulong priority)
         {
-            if (!_treePriority.ContainsKey(treeId))
-            {
-                _treePriority[treeId] = priority;
-                return;
-            }
             if (_treePriority[treeId] == priority) return;
 
             var span = GetTreeSpan(treeId);
@@ -263,8 +272,6 @@ namespace Necs
             // Find first index with higher tree or different priority
             while (target < _count && _treePriority[Infos[target].Tree] == priority && Infos[target].Tree < treeId) target++;
 
-            var len = Math.Abs(target - span.End);
-
             if (target == span.Start) return;
 
             var tempInfo = _tempInfo.AsSpan(0, count);
@@ -275,28 +282,38 @@ namespace Necs
 
             if (target > span.Start)
             {
-                _info.AsSpan(span.End + 1, len).CopyTo(_info.AsSpan(span.Start, len));
-                _data.AsSpan(span.End + 1, len).CopyTo(_data.AsSpan(span.Start, len));
-                tempInfo.CopyTo(_info.AsSpan(target - count, count));
-                tempData.CopyTo(_data.AsSpan(target - count, count));
+                if (span.End + 1 < _count)
+                {
+                    var len = Math.Abs(target - (span.End + 1));
+                    Infos.Slice(span.End + 1, len).CopyTo(Infos.Slice(span.Start, len));
+                    Data.Slice(span.End + 1, len).CopyTo(Data.Slice(span.Start, len));
+                    tempInfo.CopyTo(Infos.Slice(target - count, count));
+                    tempData.CopyTo(Data.Slice(target - count, count));
+                    Console.WriteLine($"Move {len} items");
+                }
             }
             else if (target < span.Start)
             {
-                _info.AsSpan(target, len).CopyTo(_info.AsSpan(target + count, len));
-                _data.AsSpan(target, len).CopyTo(_data.AsSpan(target + count, len));
-                tempInfo.CopyTo(_info.AsSpan(target, count));
-                tempData.CopyTo(_data.AsSpan(target, count));
+                var len = Math.Abs(target - span.Start);
+                Infos.Slice(target, len).CopyTo(Infos.Slice(target + count, len));
+                Data.Slice(target, len).CopyTo(Data.Slice(target + count, len));
+                tempInfo.CopyTo(Infos.Slice(target, count));
+                tempData.CopyTo(Data.Slice(target, count));
+                Console.WriteLine($"Move {len} items");
             }
             else return;
 
             _treePriority[treeId] = priority;
         }
 
-        public void CopyTo(IComponentList dest)
+        public void CopyTo(IComponentList dest, HashSet<ulong>? filter = null)
         {
             if (dest is ComponentList<T> l)
             {
-                for (int i = 0; i < _count; i++) l.Add(_info[i], _data[i]);
+                for (int i = 0; i < _count; i++)
+                {
+                    if (filter == null || filter.Contains(_info[i].Id)) l.Add(_info[i], _data[i]);
+                }
                 return;
             }
             throw new ArgumentException("Cannot copy to list, incorrect type");

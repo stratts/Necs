@@ -21,12 +21,23 @@ namespace Necs
 
         public void AddEntity(Entity entity)
         {
-            Do(() => entity.SetContext(this));
+            Do(() =>
+            {
+                entity.Context.CopyTo(this);
+                entity.SetContext(this);
+            });
         }
 
         public void RemoveEntity(Entity entity)
         {
-            Do(() => RemoveComponentTree(entity.Id));
+            Do(() =>
+            {
+                var targetIds = new HashSet<ulong>(GetTree(entity.Id));
+                var newCtx = new EcsContext();
+                CopyTo(newCtx, targetIds);
+                entity.SetContext(newCtx);
+                RemoveComponentTree(entity.Id);
+            });
         }
 
         public void SetTreePriority(ulong tree, ulong priority)
@@ -35,7 +46,7 @@ namespace Necs
             {
                 foreach (var list in _lists)
                 {
-                    list.SetTreePriority(tree, priority);
+                    if (list.HasTree(tree)) list.SetTreePriority(tree, priority);
                 }
             });
         }
@@ -43,10 +54,11 @@ namespace Necs
         public int GetCount<T>() => GetList<T>().Count;
 
         // Internal methods
+        private void AddList(IComponentList list) => _lists.Add(list);
 
-        internal void CopyTo(EcsContext target)
+        internal void CopyTo(EcsContext target, HashSet<ulong>? filter = null)
         {
-            foreach (var list in _lists) target.CopyFromList(list);
+            foreach (var list in _lists) target.CopyFromList(list, filter);
         }
 
         internal ref ComponentInfo GetEntityInfo(ulong entityId)
@@ -61,19 +73,21 @@ namespace Necs
             return list.GetData(entityId);
         }
 
-        internal void CopyFromList(IComponentList src)
+        internal void CopyFromList(IComponentList src, HashSet<ulong>? filter = null)
         {
             foreach (var list in _lists)
             {
                 if (list.Type == src.Type)
                 {
-                    src.CopyTo(list);
+                    src.CopyTo(list, filter);
                     UpdateMapping(src.Infos, list);
                     return;
                 }
             }
-            _lists.Add(src);
-            UpdateMapping(src.Infos, src);
+            var newList = (IComponentList)Activator.CreateInstance(src.GetType())!;
+            src.CopyTo(newList, filter);
+            _lists.Add(newList);
+            UpdateMapping(newList.Infos, newList);
         }
 
         internal void AddEntity(ComponentInfo info) => AddComponent(info, EntityData.Create());
@@ -295,6 +309,8 @@ namespace Necs
         public void AddSystem<T>(SpanConsumer<TUpdateContext, T> method) => AddSystem(_builder.MakeAction(method));
 
         public void AddSystem<T>(ComponentAction<TUpdateContext, T> method) => AddSystem(_builder.MakeAction(method));
+
+        public void AddSystem<T>(EntityAction<TUpdateContext, T> method) => AddSystem(_builder.MakeAction(method));
 
         public void AddSystem<T1, T2>(ComponentAction<TUpdateContext, T1, T2> method) => AddSystem(_builder.MakeAction(method));
 

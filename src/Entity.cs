@@ -43,12 +43,11 @@ namespace Necs
 
         public ref T GetComponent<T>() => ref _context.GetEntityComponent<T>(Id);
 
-        internal void SetContext(EcsContext context, bool copy = true)
+        internal void SetContext(EcsContext context)
         {
             if (_context == context) return;
-            if (copy) _context.CopyTo(context);
             _context = context;
-            foreach (var child in _children) child.SetContext(context, false);
+            foreach (var child in _children) child.SetContext(context);
         }
     }
 

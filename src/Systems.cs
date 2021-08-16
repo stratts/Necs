@@ -6,6 +6,8 @@ namespace Necs
 
     public delegate void ComponentAction<TUpdateContext, T1, T2>(TUpdateContext context, ref T1 a, ref T2 b);
 
+    public delegate void EntityAction<TUpdateContext, T>(TUpdateContext context, ComponentInfo entity, ref T a);
+
     public delegate void ParentAction<TUpdateContext, T>(TUpdateContext context, ref T a, ref T? parent, bool hasParent);
 
     public delegate void ParentAction<TUpdateContext, T1, T2>(TUpdateContext context, ref T1 a, ref T2 b, ref T2? parent, bool hasParent);
@@ -131,6 +133,42 @@ namespace Necs
             });
         }
 
+        public Action<TContext> MakeAction<TContext, T>(EntityAction<TContext, T> method)
+        {
+            return new(ctx =>
+            {
+                var list1 = GetList<EntityData>();
+                var list2 = GetList<T>();
+
+                var info1 = list1.Infos;
+                var info2 = list2.Infos;
+
+                var offset = 0;
+
+                for (int i = 0; i < list1.Count; i++)
+                {
+                    var tree = info1[i].Tree;
+                    var parent = info1[i].Id;
+
+                    for (int j = offset; j < list2.Count; j++)
+                    {
+                        var tree2 = info2[j].Tree;
+                        var parent2 = info2[j].ParentId;
+                        if (parent2 == parent)
+                        {
+                            method.Invoke(ctx, info1[i], ref list2.Data[j]);
+                            offset = j + 1;
+                            break;
+                        }
+                        else if (tree2 > tree)
+                        {
+                            offset = j;
+                            break;
+                        }
+                    }
+                }
+            });
+        }
 
         public Action<TContext> MakeAction<TContext, T>(ParentAction<TContext, T> method)
         {
