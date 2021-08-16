@@ -85,7 +85,7 @@ namespace Necs.Tests
                 list.Add(info, new());
             }
 
-            for (int i = 0; i < n; i++) Assert.Equal(infos[n - i - 1], list.Infos[i]);
+            for (int i = 0; i < n; i++) Assert.Equal(infos[n - i - 1].Id, list.Infos[i].Id);
         }
 
         [Fact]
@@ -163,14 +163,24 @@ namespace Necs.Tests
 
             infos.Reverse();
 
-            for (int i = 0; i < n; i++) list.SetTreePriority((ulong)i, (ulong)(n - i));
+            for (int i = 0; i < n; i++)
+            {
+                list.ResortTree((ulong)i, (ulong)(n - i));
+                ComponentInfo.SetTreePriority((ulong)i, (ulong)(n - i));
+            }
 
             for (int i = 0; i < n * size; i++)
             {
                 Assert.Equal(infos[i].Tree, list.Infos[i].Tree);
             }
 
-            for (int i = 0; i < n; i++) list.SetTreePriority((ulong)i, (ulong)(n - i) * 10);
+            infos.Reverse();
+
+            for (int i = 0; i < n; i++)
+            {
+                list.ResortTree((ulong)i, (ulong)i * 10);
+                ComponentInfo.SetTreePriority((ulong)i, (ulong)i * 10);
+            }
 
             for (int i = 0; i < n * size; i++)
             {
@@ -186,7 +196,8 @@ namespace Necs.Tests
             for (int i = 0; i < 3; i++)
             {
                 var info = AddInfoToList(list);
-                list.SetTreePriority(info.Tree, 0);
+                list.ResortTree(info.Tree, 0);
+                ComponentInfo.SetTreePriority(info.Tree, 0);
             }
 
             for (int i = 1; i < 3; i++) Assert.True(list.Infos[i - 1].Tree < list.Infos[i].Tree);

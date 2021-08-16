@@ -55,8 +55,9 @@ namespace Necs
             {
                 foreach (var list in _lists)
                 {
-                    if (list.HasTree(tree)) list.SetTreePriority(tree, priority);
+                    if (list.HasTree(tree)) list.ResortTree(tree, priority);
                 }
+                ComponentInfo.SetTreePriority(tree, priority);
             });
         }
 

@@ -12,41 +12,22 @@ namespace Necs
         ref ComponentInfo GetInfo(ulong id);
         void Remove(ulong id);
         void Resort(ulong id);
-        void SetTreePriority(ulong treeId, ulong priority);
+        void ResortTree(ulong treeId, ulong priority);
         bool HasTree(ulong treeId);
     }
 
-    public class InfoComparer : IComparer<ComponentInfo>
-    {
-        private Dictionary<ulong, ulong> _treePriority;
-
-        public InfoComparer(Dictionary<ulong, ulong> treePriority) => _treePriority = treePriority;
-
-        public int Compare(ComponentInfo x, ComponentInfo y)
-        {
-            var res = _treePriority[x.Tree].CompareTo(_treePriority[y.Tree]);
-            if (res != 0) return res;
-            res = x.Tree.CompareTo(y.Tree);
-            if (res != 0) return res;
-            res = (x.Branch).CompareTo(y.Branch);
-            return res;
-        }
-    };
-
     public struct TreeComparable : IComparable<ComponentInfo>
     {
-        private Dictionary<ulong, ulong> _treePriority;
-
         public ulong? Id { get; }
         public ulong Tree { get; }
 
-        public TreeComparable(ulong tree, Dictionary<ulong, ulong> treePriority, ulong? id = null)
-            => (Id, Tree, _treePriority) = (id, tree, treePriority);
+        public TreeComparable(ulong tree, ulong? id = null)
+            => (Id, Tree) = (id, tree);
 
         public int CompareTo(ComponentInfo other)
         {
             if (Id != null && other.Id == Id.Value) return 0;
-            var res = _treePriority[Tree].CompareTo(_treePriority[other.Tree]);
+            var res = ComponentInfo.GetTreePriority(Tree).CompareTo(other.Priority);
             if (res != 0) return res;
             return Tree.CompareTo(other.Tree);
         }
@@ -54,12 +35,11 @@ namespace Necs
 
     public struct PriorityComparable : IComparable<ComponentInfo>
     {
-        private Dictionary<ulong, ulong> _treePriority;
         private ulong _priority;
 
-        public PriorityComparable(ulong priority, Dictionary<ulong, ulong> treePriority) => (_priority, _treePriority) = (priority, treePriority);
+        public PriorityComparable(ulong priority) => _priority = priority;
 
-        public int CompareTo(ComponentInfo other) => _priority.CompareTo(_treePriority[other.Tree]);
+        public int CompareTo(ComponentInfo other) => _priority.CompareTo(other.Priority);
     }
 
     public class ComponentList<T> : IComponentList
@@ -69,8 +49,7 @@ namespace Necs
         private ComponentInfo[] _info = new ComponentInfo[4];
         private T[] _data = new T[4];
         private int _count = 0;
-        private Dictionary<ulong, ulong> _treePriority = new();
-        private IComparer<ComponentInfo> _comparer;
+        private HashSet<ulong> _trees = new();
         private Dictionary<ulong, ulong> _treeMap = new();
         private Dictionary<ulong, ulong> _parentMap = new();
 
@@ -78,11 +57,6 @@ namespace Necs
         public Span<ComponentInfo> Infos => _info.AsSpan(0, _count);
         public Span<T> Data => _data.AsSpan(0, _count);
         public Type Type { get; } = typeof(T);
-
-        public ComponentList()
-        {
-            _comparer = new InfoComparer(_treePriority);
-        }
 
         ComponentList<T1>? IComponentList.Cast<T1>() => this is ComponentList<T1> l ? l : null;
 
@@ -109,7 +83,7 @@ namespace Necs
 
         private (int Start, int End) GetTreeSpan(ulong tree)
         {
-            var treeIdx = Infos.BinarySearch(new TreeComparable(tree, _treePriority));
+            var treeIdx = Infos.BinarySearch(new TreeComparable(tree));
             if (treeIdx < 0) throw new ArgumentException("Binary search for tree failed! Tree not found or list not sorted yet");
             return GetTreeSpan(tree, treeIdx);
         }
@@ -125,7 +99,7 @@ namespace Necs
         public int? GetIndexOfId(ulong id)
         {
             var tree = _treeMap[id];
-            var treeIdx = Infos.BinarySearch(new TreeComparable(tree, _treePriority, id));
+            var treeIdx = Infos.BinarySearch(new TreeComparable(tree, id));
             if (treeIdx < 0)
             {
                 for (int i = 0; i < _count; i++)
@@ -152,11 +126,10 @@ namespace Necs
         public void Add(ComponentInfo info, T data)
         {
             _treeMap[info.Id] = info.Tree;
-            if (!_treePriority.ContainsKey(info.Tree)) _treePriority[info.Tree] = 0;
-
+            _trees.Add(info.Tree);
             if (info.ParentId != null) _parentMap[info.ParentId.Value] = info.Id;
 
-            var idx = Infos.BinarySearch(info, _comparer);
+            var idx = Infos.BinarySearch(info);
 
             if (idx < 0) idx = ~idx;
             if (idx < _count)
@@ -189,7 +162,7 @@ namespace Necs
             var i = idx.Value;
 
             var (treeStart, treeEnd) = GetTreeSpan(_treeMap[id], i);
-            if (treeStart == treeEnd) _treePriority.Remove(_treeMap[id]);
+            if (treeStart == treeEnd) _trees.Remove(_treeMap[id]);
             _treeMap.Remove(id);
             if (_info[i].ParentId != null) _parentMap.Remove(_info[i].Id);
 
@@ -208,15 +181,14 @@ namespace Necs
             var data = Data[oldIdx];
 
             _treeMap[info.Id] = info.Tree;
-            if (!_treePriority.ContainsKey(info.Tree)) _treePriority[info.Tree] = 0;
 
             if (info.ParentId != null) _parentMap[info.ParentId.Value] = info.Id;
 
             var lower = Infos.Slice(0, oldIdx);
             var upper = Infos.Slice(oldIdx + 1);
 
-            var lowerIdx = lower.BinarySearch(info, _comparer);
-            var upperIdx = upper.BinarySearch(info, _comparer);
+            var lowerIdx = lower.BinarySearch(info);
+            var upperIdx = upper.BinarySearch(info);
 
             int newIdx;
 
@@ -253,24 +225,24 @@ namespace Necs
             _data[newIdx] = data;
         }
 
-        public bool HasTree(ulong treeId) => _treePriority.ContainsKey(treeId);
+        public bool HasTree(ulong treeId) => _trees.Contains(treeId);
 
-        public void SetTreePriority(ulong treeId, ulong priority)
+        public void ResortTree(ulong treeId, ulong priority)
         {
-            if (_treePriority[treeId] == priority) return;
+            if (ComponentInfo.GetTreePriority(treeId) == priority) return;
 
             var span = GetTreeSpan(treeId);
             var count = span.End - span.Start + 1;
-            var priorityIdx = Infos.BinarySearch(new PriorityComparable(priority, _treePriority));
+            var priorityIdx = Infos.BinarySearch(new PriorityComparable(priority));
             if (priorityIdx < 0) priorityIdx = ~priorityIdx;
 
             int target = priorityIdx;
 
             // Find start of priority
-            while (target - 1 >= 0 && _treePriority[Infos[target - 1].Tree] == priority && Infos[target - 1].Tree >= treeId) target--;
+            while (target - 1 >= 0 && Infos[target - 1].Priority == priority && Infos[target - 1].Tree >= treeId) target--;
 
             // Find first index with higher tree or different priority
-            while (target < _count && _treePriority[Infos[target].Tree] == priority && Infos[target].Tree < treeId) target++;
+            while (target < _count && Infos[target].Priority == priority && Infos[target].Tree < treeId) target++;
 
             if (target == span.Start) return;
 
@@ -289,7 +261,6 @@ namespace Necs
                     Data.Slice(span.End + 1, len).CopyTo(Data.Slice(span.Start, len));
                     tempInfo.CopyTo(Infos.Slice(target - count, count));
                     tempData.CopyTo(Data.Slice(target - count, count));
-                    //Console.WriteLine($"Move {len} items");
                 }
             }
             else if (target < span.Start)
@@ -299,11 +270,8 @@ namespace Necs
                 Data.Slice(target, len).CopyTo(Data.Slice(target + count, len));
                 tempInfo.CopyTo(Infos.Slice(target, count));
                 tempData.CopyTo(Data.Slice(target, count));
-                //Console.WriteLine($"Move {len} items");
             }
             else return;
-
-            _treePriority[treeId] = priority;
         }
 
         public void CopyTo(IComponentList dest, HashSet<ulong>? filter = null)

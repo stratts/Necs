@@ -1,12 +1,14 @@
 using System;
+using System.Collections.Generic;
 
 namespace Necs
 {
     public struct Empty { }
 
-    public struct ComponentInfo : IEquatable<ComponentInfo>
+    public struct ComponentInfo : IComparable<ComponentInfo>
     {
         private static ulong _id = 0;
+        private static Dictionary<ulong, ulong?> _priority = new();
 
         public string Name;
         public ulong Id;
@@ -15,6 +17,7 @@ namespace Necs
         public ulong Tree;
         public byte TreeDepth;
         public ulong Branch;
+        public ulong Priority => GetTreePriority(Tree);
 
         public static ComponentInfo Create()
         {
@@ -38,6 +41,18 @@ namespace Necs
             return (Branch & mask) == (other.Branch & mask);
         }
 
-        public bool Equals(ComponentInfo other) => Id == other.Id;
+        public int CompareTo(ComponentInfo other)
+        {
+            var res = Priority.CompareTo(other.Priority);
+            if (res != 0) return res;
+            res = Tree.CompareTo(other.Tree);
+            if (res != 0) return res;
+            res = Branch.CompareTo(other.Branch);
+            return res;
+        }
+
+        public static void SetTreePriority(ulong tree, ulong priority) => _priority[tree] = priority;
+
+        public static ulong GetTreePriority(ulong tree) => _priority.GetValueOrDefault(tree) is ulong p ? p : ulong.MaxValue;
     }
 }
