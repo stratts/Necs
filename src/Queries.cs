@@ -118,25 +118,42 @@ namespace Necs
 
             T? none = default;
 
+            if (infos.Length == 0) return;
+
+            ulong prevTree = infos[0].Tree;
+            ulong prevDepth = infos[0].TreeDepth;
+            ref var prevData = ref data[0];
+
+            method.Invoke(ref prevData, ref none, false);
+
             for (int i = 1; i < infos.Length; i++)
             {
                 ref var info = ref infos[i];
                 ref var d = ref data[i];
 
-                for (int j = i - 1; j >= 0; j--)
+                if (info.Tree != prevTree) method.Invoke(ref d, ref none, false);
+                else if (info.TreeDepth > prevDepth) method.Invoke(ref d, ref prevData, true);
+                else
                 {
-                    var prev = infos[j];
-                    if (info.TreeDepth > prev.TreeDepth && info.IsDescendantOf(ref prev))
+                    for (int j = i - 2; j >= 0; j--)
                     {
-                        method.Invoke(ref d, ref data[j]!, true);
-                        break;
-                    }
-                    else if (info.Tree != prev.Tree)
-                    {
-                        method.Invoke(ref d, ref none, false);
-                        break;
+                        var prev = infos[j];
+                        if (info.TreeDepth > prev.TreeDepth && info.IsDescendantOf(ref prev))
+                        {
+                            method.Invoke(ref d, ref data[j]!, true);
+                            break;
+                        }
+                        else if (info.Tree != prev.Tree)
+                        {
+                            method.Invoke(ref d, ref none, false);
+                            break;
+                        }
                     }
                 }
+
+                prevTree = info.Tree;
+                prevDepth = info.TreeDepth;
+                prevData = ref d;
             }
         }
 

@@ -24,8 +24,6 @@ namespace Necs
         protected Queue<Action> _deferred = new();
         protected List<IComponentList> _lists = new();
 
-        internal EcsContext() { }
-
         // Public methods
 
         public void AddEntity(Entity entity)
