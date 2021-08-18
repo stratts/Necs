@@ -155,7 +155,7 @@ namespace Necs
                 _info = tmpInfo;
             }
 
-            UpdateParentLoc(idx);
+            UpdateTreeInfo(idx);
         }
 
         public void Remove(ulong id)
@@ -174,7 +174,8 @@ namespace Necs
             Array.Copy(_data, i + 1, _data, i, _count - i);
             _count--;
 
-            UpdateParentLoc(i);
+            UpdateTreeInfo(i);
+            if (i > 0) UpdateTreeInfo(i - 1);
         }
 
         public void Resort(ulong id)
@@ -200,7 +201,7 @@ namespace Necs
 
             if (~lowerIdx == lower.Length && ~upperIdx == 0)
             {
-                UpdateParentLoc(oldIdx);
+                UpdateTreeInfo(oldIdx);
                 return; // Already in correct spot
             }
             else if (~lowerIdx == lower.Length && upperIdx > 0) newIdx = lower.Length + upperIdx;
@@ -225,7 +226,7 @@ namespace Necs
             }
             else
             {
-                UpdateParentLoc(oldIdx);
+                UpdateTreeInfo(oldIdx);
                 return;
             }
 
@@ -235,26 +236,20 @@ namespace Necs
             _info[newIdx] = info;
             _data[newIdx] = data;
 
-            UpdateParentLoc(newIdx);
+            UpdateTreeInfo(newIdx);
         }
 
-        public void UpdateParentLoc(int idx)
+        public void UpdateTreeInfo(int idx)
         {
-            var targetTree = _info[idx].Tree;
+            var tree = _info[idx].Tree;
+            var (start, end) = GetTreeSpan(tree, idx);
+            var treeSize = (ushort)(end - start + 1);
 
-            for (int i = idx; i < _count; i++)
+            for (int i = start; i < end + 1; i++)
             {
                 ref var info = ref _info[i];
-                var tree = info.Tree;
                 var depth = info.TreeDepth;
-
-                if (i == 0)
-                {
-                    _info[i].ParentLoc = 0;
-                    break;
-                }
-
-                if (tree != targetTree) break;
+                info.TreeSize = treeSize;
 
                 for (int j = i - 1; j >= 0; j--)
                 {
@@ -307,6 +302,7 @@ namespace Necs
                 if (span.End + 1 < _count)
                 {
                     var len = Math.Abs(target - (span.End + 1));
+                    if (len == 0) return;
                     Infos.Slice(span.End + 1, len).CopyTo(Infos.Slice(span.Start, len));
                     Data.Slice(span.End + 1, len).CopyTo(Data.Slice(span.Start, len));
                     tempInfo.CopyTo(Infos.Slice(target - count, count));
@@ -316,6 +312,7 @@ namespace Necs
             else if (target < span.Start)
             {
                 var len = Math.Abs(target - span.Start);
+                if (len == 0) return;
                 Infos.Slice(target, len).CopyTo(Infos.Slice(target + count, len));
                 Data.Slice(target, len).CopyTo(Data.Slice(target + count, len));
                 tempInfo.CopyTo(Infos.Slice(target, count));

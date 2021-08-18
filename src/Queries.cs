@@ -8,9 +8,9 @@ namespace Necs
 
     public delegate void EntityAction<T>(EntityInfo entityId, ref T a);
 
-    public delegate void ParentAction<T>(ref T a, ref T? parent, bool hasParent);
+    public delegate void ParentAction<T>(ref T a, ref T parent, bool hasParent);
 
-    public delegate void ParentAction<T1, T2>(ref T1 a, ref T2 b, ref T2? parent, bool hasParent);
+    public delegate void ParentAction<T1, T2>(ref T1 a, ref T2 b, ref T2 parent, bool hasParent);
 
     public struct EntityInfo
     {
@@ -53,6 +53,17 @@ namespace Necs
         public ref T Parent => ref _data[_idx - _info[_idx].ParentLoc];
     }
 
+    static class TempArray<T>
+    {
+        private static T[] _data = new T[128];
+
+        public static Span<T> Create(int count)
+        {
+            if (_data.Length < count) _data = new T[count * 2];
+            return _data.AsSpan(0, count);
+        }
+    }
+
     public partial class EcsContext
     {
         public ComponentIterator<T> GetIterator<T>()
@@ -70,7 +81,7 @@ namespace Necs
             foreach (ref var c in components.Data) method.Invoke(ref c);
         }
 
-        public void Query<T1, T2>(ComponentAction<T1, T2> method, bool reverse = false)
+        private Span<(int, int)> GetPairs<T1, T2>()
         {
             var list1 = GetList<T1>();
             var list2 = GetList<T2>();
@@ -78,7 +89,7 @@ namespace Necs
             var infos1 = list1.Infos;
             var infos2 = list2.Infos;
 
-            Span<(int, int)> pairs = stackalloc (int, int)[Math.Min(list1.Count, list2.Count)];
+            var pairs = TempArray<(int, int)>.Create(Math.Min(list1.Count, list2.Count));
             int count = 0;
 
             var offset = 0;
@@ -109,19 +120,34 @@ namespace Necs
                         offset = j;
                         break;
                     }
+                    else if (tree2 != tree) j += info2.TreeSize - 1;
                 }
             }
+
+            pairs = pairs.Slice(0, count);
+            return pairs;
+        }
+
+        public void Query<T1, T2>(ComponentAction<T1, T2> method, bool reverse = false)
+        {
+            var list1 = GetList<T1>();
+            var list2 = GetList<T2>();
+
+            bool flip = list1.Count > list2.Count ? true : false;
+
+            var pairs = flip ? GetPairs<T2, T1>() : GetPairs<T1, T2>();
 
             var data1 = list1.Data;
             var data2 = list2.Data;
 
-            var (start, end, inc) = reverse ? (count - 1, -1, -1) : (0, count, 1);
+            var (start, end, inc) = reverse ? (pairs.Length - 1, -1, -1) : (0, pairs.Length, 1);
             int cur = start;
 
             while (cur != end)
             {
                 var (c1, c2) = pairs[cur];
-                method?.Invoke(ref data1[c1], ref data2[c2]);
+                if (flip) method.Invoke(ref data1[c2], ref data2[c1]);
+                else method.Invoke(ref data1[c1], ref data2[c2]);
                 cur += inc;
             }
         }
@@ -156,59 +182,45 @@ namespace Necs
             {
                 var parent = infos[i].ParentLoc;
                 if (parent > 0) method.Invoke(ref data[i], ref data[i - parent]!, true);
-                else method.Invoke(ref data[i], ref none, false);
+                else method.Invoke(ref data[i], ref none!, false);
                 i += inc;
             }
         }
 
-        public void QueryParent<T1, T2>(ParentAction<T1, T2> method)
+        public void Query<T1, T2>(ParentAction<T1, T2> method, bool reverse = false)
         {
             var list1 = GetList<T1>();
             var list2 = GetList<T2>();
 
-            var info1 = list1.Infos;
-            var info2 = list2.Infos;
+            bool flip = list1.Count > list2.Count ? true : false;
+            var pairs = flip ? GetPairs<T2, T1>() : GetPairs<T1, T2>();
+            T2? none = default;
 
-            var offset = 0;
+            var data1 = list1.Data;
+            var data2 = list2.Data;
 
-            T2? empty = default;
+            var infos1 = list1.Infos;
+            var infos2 = list2.Infos;
 
-            for (int i = 0; i < list1.Count; i++)
+            var (start, end, inc) = reverse ? (pairs.Length - 1, -1, -1) : (0, pairs.Length, 1);
+            int cur = start;
+
+            while (cur != end)
             {
-                var tree = info1[i].Tree;
-                var parent = info1[i].ParentId;
-
-                for (int j = offset; j < list2.Count; j++)
+                var (c1, c2) = pairs[cur];
+                if (flip)
                 {
-                    var tree2 = info2[j].Tree;
-                    var parent2 = info2[j].ParentId;
-                    if (parent2 == parent)
-                    {
-                        var desc = info2[j];
-                        for (int k = j - 1; k >= 0; k--)
-                        {
-                            ref var prev = ref info2[k];
-                            if (desc.IsDescendantOf(ref prev))
-                            {
-                                method.Invoke(ref list1.Data[i], ref list2.Data[j], ref list2.Data[k]!, true);
-                                break;
-                            }
-                            else if (prev.Tree != desc.Tree)
-                            {
-                                method.Invoke(ref list1.Data[i], ref list2.Data[j], ref empty, false);
-                                break;
-                            }
-                        }
-
-                        offset = j + 1;
-                        break;
-                    }
-                    else if (tree2 > tree)
-                    {
-                        offset = j;
-                        break;
-                    }
+                    var parent = infos2[c1].ParentLoc;
+                    if (parent > 0) method.Invoke(ref data1[c2], ref data2[c1], ref data2[c1 - parent]!, true);
+                    else method.Invoke(ref data1[c2], ref data2[c1], ref none!, false);
                 }
+                else
+                {
+                    var parent = infos2[c2].ParentLoc;
+                    if (parent > 0) method.Invoke(ref data1[c1], ref data2[c2], ref data2[c2 - parent]!, true);
+                    else method.Invoke(ref data1[c1], ref data2[c2], ref none!, false);
+                }
+                cur += inc;
             }
         }
     }

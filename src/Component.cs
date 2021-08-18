@@ -19,6 +19,7 @@ namespace Necs
         public byte TreeDepth;
         public ulong Branch;
         public ulong Priority;
+        public ushort TreeSize;
 
         public static ComponentInfo Create()
         {
