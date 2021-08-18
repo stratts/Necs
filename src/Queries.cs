@@ -6,31 +6,73 @@ namespace Necs
 
     public delegate void ComponentAction<T1, T2>(ref T1 a, ref T2 b);
 
-    public delegate void EntityAction<T>(ComponentInfo entity, ref T a);
+    public delegate void EntityAction<T>(EntityInfo entityId, ref T a);
 
     public delegate void ParentAction<T>(ref T a, ref T? parent, bool hasParent);
 
     public delegate void ParentAction<T1, T2>(ref T1 a, ref T2 b, ref T2? parent, bool hasParent);
 
-    public delegate void SpanConsumer<T>(Span<T> components);
+    public struct EntityInfo
+    {
+        public ulong Id;
+        public byte Depth;
+    }
+
+    public ref struct ComponentIterator<T>
+    {
+        private int _idx;
+        private Span<ComponentInfo> _info;
+        private Span<T> _data;
+        private int _length;
+        private EntityInfo _entity;
+
+        public int Length => _length;
+
+        public ComponentIterator(Span<ComponentInfo> info, Span<T> data)
+        {
+            _info = info;
+            _data = data;
+            _idx = -1;
+            _length = data.Length;
+            _entity = new();
+        }
+
+        public bool MoveNext() => ++_idx < _data.Length;
+
+        public EntityInfo Entity
+        {
+            get
+            {
+                ref var info = ref _info[_idx];
+                _entity.Id = info.ParentId!.Value;
+                _entity.Depth = info.TreeDepth;
+                return _entity;
+            }
+        }
+
+        public ref T Component => ref _data[_idx];
+    }
 
     public interface IEcsContext
     {
+        Span<T> GetSpan<T>();
+        ComponentIterator<T> GetIterator<T>();
         void Query<T>(ComponentAction<T> callback);
         void Query<T1, T2>(ComponentAction<T1, T2> callback);
         void Query<T>(EntityAction<T> callback);
         void Query<T>(ParentAction<T> callback);
         void QueryParent<T1, T2>(ParentAction<T1, T2> callback);
-        void Query<T>(SpanConsumer<T> callback);
     }
 
     public partial class EcsContext : IEcsContext
     {
-        public void Query<T>(SpanConsumer<T> callback)
+        public ComponentIterator<T> GetIterator<T>()
         {
-            var components = GetList<T>();
-            callback?.Invoke(components.Data);
+            var list = GetList<T>();
+            return new ComponentIterator<T>(list.Infos, list.Data);
         }
+
+        public Span<T> GetSpan<T>() => GetList<T>().Data;
 
         public void Query<T>(ComponentAction<T> method)
         {
@@ -38,7 +80,7 @@ namespace Necs
 
             foreach (ref var c in components.Data)
             {
-                method?.Invoke(ref c);
+                method.Invoke(ref c);
             }
         }
 
@@ -78,35 +120,14 @@ namespace Necs
 
         public void Query<T>(EntityAction<T> method)
         {
-            var list1 = GetList<EntityData>();
-            var list2 = GetList<T>();
+            var components = GetList<T>();
+            var infos = components.Infos;
+            var data = components.Data;
 
-            var info1 = list1.Infos;
-            var info2 = list2.Infos;
-
-            var offset = 0;
-
-            for (int i = 0; i < list1.Count; i++)
+            for (int i = 0; i < components.Count; i++)
             {
-                var tree = info1[i].Tree;
-                var parent = info1[i].Id;
-
-                for (int j = offset; j < list2.Count; j++)
-                {
-                    var tree2 = info2[j].Tree;
-                    var parent2 = info2[j].ParentId;
-                    if (parent2 == parent)
-                    {
-                        method.Invoke(info1[i], ref list2.Data[j]);
-                        offset = j + 1;
-                        break;
-                    }
-                    else if (tree2 > tree)
-                    {
-                        offset = j;
-                        break;
-                    }
-                }
+                ref var info = ref infos[i];
+                method.Invoke(new EntityInfo() { Id = info.ParentId!.Value, Depth = info.TreeDepth }, ref data[i]);
             }
         }
 
@@ -147,9 +168,9 @@ namespace Necs
                         {
                             method.Invoke(ref d, ref none, false);
                             break;
-                        }
                     }
                 }
+            }
 
                 prevTree = info.Tree;
                 prevDepth = info.TreeDepth;
