@@ -135,46 +135,50 @@ namespace Necs
         {
             var list = GetList<T>();
             var infos = list.Infos;
-            var data = list.Data;
-
-            T? none = default;
 
             if (infos.Length == 0) return;
 
+            Span<sbyte> parents = stackalloc sbyte[list.Count];
+            parents.Fill(-1);
+
             ulong prevTree = infos[0].Tree;
             ulong prevDepth = infos[0].TreeDepth;
-            ref var prevData = ref data[0];
-
-            method.Invoke(ref prevData, ref none, false);
+            //method.Invoke(ref prevData, ref none, false);
 
             for (int i = 1; i < infos.Length; i++)
             {
                 ref var info = ref infos[i];
-                ref var d = ref data[i];
+                var tree = info.Tree;
+                var depth = info.TreeDepth;
 
-                if (info.Tree != prevTree) method.Invoke(ref d, ref none, false);
-                else if (info.TreeDepth > prevDepth) method.Invoke(ref d, ref prevData, true);
+                if (tree != prevTree) { }
+                else if (depth > prevDepth) parents[i] = 1;
                 else
                 {
                     for (int j = i - 2; j >= 0; j--)
                     {
-                        var prev = infos[j];
-                        if (info.TreeDepth > prev.TreeDepth && info.IsDescendantOf(ref prev))
+                        ref var prev = ref infos[j];
+                        if (tree != prev.Tree) break;
+                        else if (depth > prev.TreeDepth)
                         {
-                            method.Invoke(ref d, ref data[j]!, true);
+                            parents[i] = (sbyte)(i - j);
                             break;
                         }
-                        else if (info.Tree != prev.Tree)
-                        {
-                            method.Invoke(ref d, ref none, false);
-                            break;
                     }
                 }
+
+                prevTree = tree;
+                prevDepth = depth;
             }
 
-                prevTree = info.Tree;
-                prevDepth = info.TreeDepth;
-                prevData = ref d;
+            T? none = default;
+            var data = list.Data;
+
+            for (int i = 0; i < data.Length; i++)
+            {
+                var parent = parents[i];
+                if (parent > 0) method.Invoke(ref data[i], ref data[i - parent]!, true);
+                else method.Invoke(ref data[i], ref none, false);
             }
         }
 
