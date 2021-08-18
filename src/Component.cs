@@ -3,9 +3,9 @@ using System.Collections.Generic;
 
 namespace Necs
 {
-    public struct Empty { }
+    struct Empty { }
 
-    public struct ComponentInfo : IComparable<ComponentInfo>
+    struct ComponentInfo : IComparable<ComponentInfo>
     {
         private static ulong _id = 0;
         private static Dictionary<ulong, ulong?> _priority = new();
@@ -13,7 +13,7 @@ namespace Necs
         public string Name;
         public ulong Id;
         public ulong? ParentId;
-        public sbyte ParentLoc;
+        public byte ParentLoc;
         public bool IsEntity;
         public ulong Tree;
         public byte TreeDepth;

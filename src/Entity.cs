@@ -7,12 +7,13 @@ namespace Necs
         private EcsContext _context = new EcsContext();
         private List<Entity> _children = new();
 
-        public ref ComponentInfo Info => ref _context.GetEntityInfo(Id);
+        internal ref ComponentInfo Info => ref _context.GetEntityInfo(Id);
         internal EntityData Data => _context.GetEntityData(Id);
 
         internal EcsContext Context => _context;
 
         public ulong Id { get; }
+        public ulong Tree => Info.Tree;
 
         public Entity()
         {
@@ -51,7 +52,7 @@ namespace Necs
         }
     }
 
-    public struct EntityData
+    struct EntityData
     {
         public HashSet<ulong> Children { get; set; }
         public Dictionary<ulong, byte> Branches { get; set; }

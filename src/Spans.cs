@@ -2,12 +2,12 @@ using System;
 
 namespace Necs
 {
-    public static class SpanExtensions
+    static class SpanExtensions
     {
         public static ReversedSpan<T> Reversed<T>(this Span<T> span) => new ReversedSpan<T>(span);
     }
 
-    public ref struct ReversedSpan<T>
+    ref struct ReversedSpan<T>
     {
         private Span<T> _data;
         private int _idx;
@@ -33,7 +33,7 @@ namespace Necs
         public ReversedSpan<T> GetEnumerator() => new(_data);
     }
 
-    public ref struct MappedSpan<T>
+    ref struct MappedSpan<T>
     {
         private Span<int> _map;
         private Span<T> _data;

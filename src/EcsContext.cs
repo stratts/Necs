@@ -10,11 +10,11 @@ namespace Necs
     public interface IComponentSystem<TContext>
     {
         void BeforeProcess(TContext context) { }
-        void Process(TContext context, IEcsContext ecs);
+        void Process(TContext context, EcsContext ecs);
         void AfterProcess(TContext context) { }
     }
 
-    public delegate void ComponentSystemAction<TContext>(TContext context, IEcsContext ecs);
+    public delegate void ComponentSystemAction<TContext>(TContext context, EcsContext ecs);
 
     public partial class EcsContext
     {
@@ -22,7 +22,7 @@ namespace Necs
 
         private Dictionary<ulong, IComponentList> _map = new();
         protected Queue<Action> _deferred = new();
-        protected List<IComponentList> _lists = new();
+        private protected List<IComponentList> _lists = new();
 
         // Public methods
 
@@ -58,8 +58,6 @@ namespace Necs
                 ComponentInfo.SetTreePriority(tree, priority);
             });
         }
-
-        public int GetCount<T>() => GetList<T>().Count;
 
         // Internal methods
         private void AddList(IComponentList list) => _lists.Add(list);
@@ -257,7 +255,7 @@ namespace Necs
 
         // Protected and private methods
 
-        internal ComponentList<T> GetList<T>()
+        private ComponentList<T> GetList<T>()
         {
             foreach (var list in _lists)
             {
@@ -268,13 +266,13 @@ namespace Necs
             return newList;
         }
 
-        protected void Do(Action action)
+        private void Do(Action action)
         {
             if (!Lock) action();
             else _deferred.Enqueue(action);
         }
 
-        protected IComponentList GetList(ulong componentId)
+        private protected IComponentList GetList(ulong componentId)
         {
             var present = _map.TryGetValue(componentId, out var list);
             if (!present || list == null) throw new ArgumentException("Invalid component ID supplied");

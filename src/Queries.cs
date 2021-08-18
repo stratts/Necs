@@ -25,10 +25,11 @@ namespace Necs
         private Span<T> _data;
         private int _length;
         private EntityInfo _entity;
+        private static T? none = default;
 
         public int Length => _length;
 
-        public ComponentIterator(Span<ComponentInfo> info, Span<T> data)
+        internal ComponentIterator(Span<ComponentInfo> info, Span<T> data)
         {
             _info = info;
             _data = data;
@@ -51,20 +52,13 @@ namespace Necs
         }
 
         public ref T Component => ref _data[_idx];
+
+        public bool HasParent => _info[_idx].ParentLoc != 0;
+
+        public ref T Parent => ref _data[_idx - _info[_idx].ParentLoc];
     }
 
-    public interface IEcsContext
-    {
-        Span<T> GetSpan<T>();
-        ComponentIterator<T> GetIterator<T>();
-        void Query<T>(ComponentAction<T> callback);
-        void Query<T1, T2>(ComponentAction<T1, T2> callback);
-        void Query<T>(EntityAction<T> callback);
-        void Query<T>(ParentAction<T> callback, bool reverse = false);
-        void QueryParent<T1, T2>(ParentAction<T1, T2> callback);
-    }
-
-    public partial class EcsContext : IEcsContext
+    public partial class EcsContext
     {
         public ComponentIterator<T> GetIterator<T>()
         {
@@ -78,10 +72,7 @@ namespace Necs
         {
             var components = GetList<T>();
 
-            foreach (ref var c in components.Data)
-            {
-                method.Invoke(ref c);
-            }
+            foreach (ref var c in components.Data) method.Invoke(ref c);
         }
 
         public void Query<T1, T2>(ComponentAction<T1, T2> method)
@@ -89,27 +80,32 @@ namespace Necs
             var list1 = GetList<T1>();
             var list2 = GetList<T2>();
 
-            var info1 = list1.Infos;
-            var info2 = list2.Infos;
+            var infos1 = list1.Infos;
+            var infos2 = list2.Infos;
 
             var offset = 0;
 
             for (int i = 0; i < list1.Count; i++)
             {
-                var tree = info1[i].Tree;
-                var parent = info1[i].ParentId;
+                ref var info1 = ref infos1[i];
+                var tree = info1.Tree;
+                var parent = info1.ParentId;
+                var priority = info1.Priority;
 
                 for (int j = offset; j < list2.Count; j++)
                 {
-                    var tree2 = info2[j].Tree;
-                    var parent2 = info2[j].ParentId;
+                    ref var info2 = ref infos2[j];
+                    var tree2 = info2.Tree;
+                    var parent2 = info2.ParentId;
+                    var priority2 = info2.Priority;
+
                     if (parent2 == parent)
                     {
                         method.Invoke(ref list1.Data[i], ref list2.Data[j]);
                         offset = j + 1;
                         break;
                     }
-                    else if (tree2 > tree)
+                    else if (priority < priority2 || (priority == priority2 && tree < tree2))
                     {
                         offset = j;
                         break;

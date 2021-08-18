@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace Necs
 {
-    public interface IComponentList
+    interface IComponentList
     {
         ComponentList<T>? Cast<T>();
         Span<ComponentInfo> Infos { get; }
@@ -16,7 +16,7 @@ namespace Necs
         bool HasTree(ulong treeId);
     }
 
-    public struct TreeComparable : IComparable<ComponentInfo>
+    struct TreeComparable : IComparable<ComponentInfo>
     {
         public ulong? Id { get; }
         public ulong Tree { get; }
@@ -33,7 +33,7 @@ namespace Necs
         }
     }
 
-    public struct PriorityComparable : IComparable<ComponentInfo>
+    struct PriorityComparable : IComparable<ComponentInfo>
     {
         private ulong _priority;
 
@@ -42,7 +42,7 @@ namespace Necs
         public int CompareTo(ComponentInfo other) => _priority.CompareTo(other.Priority);
     }
 
-    public class ComponentList<T> : IComponentList
+    class ComponentList<T> : IComponentList
     {
         private ComponentInfo[] _tempInfo = new ComponentInfo[128];
         private T[] _tempData = new T[128];
@@ -265,7 +265,7 @@ namespace Necs
                     }
                     else if (depth > prev.TreeDepth && info.IsDescendantOf(ref prev))
                     {
-                        info.ParentLoc = (sbyte)(i - j);
+                        info.ParentLoc = (byte)(i - j);
                         break;
                     }
                 }
