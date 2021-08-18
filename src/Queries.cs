@@ -60,7 +60,7 @@ namespace Necs
         void Query<T>(ComponentAction<T> callback);
         void Query<T1, T2>(ComponentAction<T1, T2> callback);
         void Query<T>(EntityAction<T> callback);
-        void Query<T>(ParentAction<T> callback);
+        void Query<T>(ParentAction<T> callback, bool reverse = false);
         void QueryParent<T1, T2>(ParentAction<T1, T2> callback);
     }
 
@@ -131,54 +131,25 @@ namespace Necs
             }
         }
 
-        public void Query<T>(ParentAction<T> method)
+        public void Query<T>(ParentAction<T> method, bool reverse = false)
         {
             var list = GetList<T>();
             var infos = list.Infos;
 
             if (infos.Length == 0) return;
 
-            Span<sbyte> parents = stackalloc sbyte[list.Count];
-            parents.Fill(-1);
-
-            ulong prevTree = infos[0].Tree;
-            ulong prevDepth = infos[0].TreeDepth;
-            //method.Invoke(ref prevData, ref none, false);
-
-            for (int i = 1; i < infos.Length; i++)
-            {
-                ref var info = ref infos[i];
-                var tree = info.Tree;
-                var depth = info.TreeDepth;
-
-                if (tree != prevTree) { }
-                else if (depth > prevDepth) parents[i] = 1;
-                else
-                {
-                    for (int j = i - 2; j >= 0; j--)
-                    {
-                        ref var prev = ref infos[j];
-                        if (tree != prev.Tree) break;
-                        else if (depth > prev.TreeDepth)
-                        {
-                            parents[i] = (sbyte)(i - j);
-                            break;
-                        }
-                    }
-                }
-
-                prevTree = tree;
-                prevDepth = depth;
-            }
-
             T? none = default;
             var data = list.Data;
 
-            for (int i = 0; i < data.Length; i++)
+            var (start, end, inc) = reverse ? (data.Length - 1, -1, -1) : (0, data.Length, 1);
+            int i = start;
+
+            while (i != end)
             {
-                var parent = parents[i];
+                var parent = infos[i].ParentLoc;
                 if (parent > 0) method.Invoke(ref data[i], ref data[i - parent]!, true);
                 else method.Invoke(ref data[i], ref none, false);
+                i += inc;
             }
         }
 

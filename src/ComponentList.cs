@@ -153,6 +153,8 @@ namespace Necs
                 _info.CopyTo(tmpInfo, 0);
                 _info = tmpInfo;
             }
+
+            UpdateParentLoc(idx);
         }
 
         public void Remove(ulong id)
@@ -165,10 +167,13 @@ namespace Necs
             if (treeStart == treeEnd) _trees.Remove(_treeMap[id]);
             _treeMap.Remove(id);
             if (_info[i].ParentId != null) _parentMap.Remove(_info[i].Id);
+            _info[i].ParentLoc = 0;
 
             Array.Copy(_info, i + 1, _info, i, _count - i);
             Array.Copy(_data, i + 1, _data, i, _count - i);
             _count--;
+
+            UpdateParentLoc(i);
         }
 
         public void Resort(ulong id)
@@ -192,7 +197,11 @@ namespace Necs
 
             int newIdx;
 
-            if (~lowerIdx == lower.Length && ~upperIdx == 0) return; // Already in correct spot
+            if (~lowerIdx == lower.Length && ~upperIdx == 0)
+            {
+                UpdateParentLoc(oldIdx);
+                return; // Already in correct spot
+            }
             else if (~lowerIdx == lower.Length && upperIdx > 0) newIdx = lower.Length + upperIdx;
             else if (~lowerIdx == lower.Length && upperIdx < 0) newIdx = Math.Min(lower.Length + ~upperIdx, _count - 1);
             else newIdx = ~lowerIdx;
@@ -215,6 +224,7 @@ namespace Necs
             }
             else
             {
+                UpdateParentLoc(oldIdx);
                 return;
             }
 
@@ -223,6 +233,43 @@ namespace Necs
 
             _info[newIdx] = info;
             _data[newIdx] = data;
+
+            UpdateParentLoc(newIdx);
+        }
+
+        public void UpdateParentLoc(int idx)
+        {
+            var targetTree = _info[idx].Tree;
+
+            for (int i = idx; i < _count; i++)
+            {
+                ref var info = ref _info[i];
+                var tree = info.Tree;
+                var depth = info.TreeDepth;
+
+                if (i == 0)
+                {
+                    _info[i].ParentLoc = 0;
+                    break;
+                }
+
+                if (tree != targetTree) break;
+
+                for (int j = i - 1; j >= 0; j--)
+                {
+                    ref var prev = ref _info[j];
+                    if (tree != prev.Tree)
+                    {
+                        _info[i].ParentLoc = 0;
+                        break;
+                    }
+                    else if (depth > prev.TreeDepth && info.IsDescendantOf(ref prev))
+                    {
+                        info.ParentLoc = (sbyte)(i - j);
+                        break;
+                    }
+                }
+            }
         }
 
         public bool HasTree(ulong treeId) => _trees.Contains(treeId);

@@ -13,6 +13,7 @@ namespace Necs
         public string Name;
         public ulong Id;
         public ulong? ParentId;
+        public sbyte ParentLoc;
         public bool IsEntity;
         public ulong Tree;
         public byte TreeDepth;
@@ -27,7 +28,7 @@ namespace Necs
                 Id = _id,
                 Tree = _id,
                 IsEntity = false,
-                Branch = 0,
+                Branch = 0
             };
 
             _id++;
