@@ -23,18 +23,13 @@ namespace Necs
         private int _idx;
         private Span<ComponentInfo> _info;
         private Span<T> _data;
-        private int _length;
         private EntityInfo _entity;
-        private static T? none = default;
-
-        public int Length => _length;
 
         internal ComponentIterator(Span<ComponentInfo> info, Span<T> data)
         {
             _info = info;
             _data = data;
             _idx = -1;
-            _length = data.Length;
             _entity = new();
         }
 
@@ -75,13 +70,16 @@ namespace Necs
             foreach (ref var c in components.Data) method.Invoke(ref c);
         }
 
-        public void Query<T1, T2>(ComponentAction<T1, T2> method)
+        public void Query<T1, T2>(ComponentAction<T1, T2> method, bool reverse = false)
         {
             var list1 = GetList<T1>();
             var list2 = GetList<T2>();
 
             var infos1 = list1.Infos;
             var infos2 = list2.Infos;
+
+            Span<(int, int)> pairs = stackalloc (int, int)[Math.Min(list1.Count, list2.Count)];
+            int count = 0;
 
             var offset = 0;
 
@@ -101,7 +99,8 @@ namespace Necs
 
                     if (parent2 == parent)
                     {
-                        method.Invoke(ref list1.Data[i], ref list2.Data[j]);
+                        pairs[count] = (i, j);
+                        count++;
                         offset = j + 1;
                         break;
                     }
@@ -111,6 +110,19 @@ namespace Necs
                         break;
                     }
                 }
+            }
+
+            var data1 = list1.Data;
+            var data2 = list2.Data;
+
+            var (start, end, inc) = reverse ? (count - 1, -1, -1) : (0, count, 1);
+            int cur = start;
+
+            while (cur != end)
+            {
+                var (c1, c2) = pairs[cur];
+                method?.Invoke(ref data1[c1], ref data2[c2]);
+                cur += inc;
             }
         }
 

@@ -18,7 +18,7 @@ namespace Necs
         public ulong Tree;
         public byte TreeDepth;
         public ulong Branch;
-        public ulong Priority => GetTreePriority(Tree);
+        public ulong Priority;
 
         public static ComponentInfo Create()
         {
@@ -28,7 +28,8 @@ namespace Necs
                 Id = _id,
                 Tree = _id,
                 IsEntity = false,
-                Branch = 0
+                Branch = 0,
+                Priority = ulong.MaxValue
             };
 
             _id++;

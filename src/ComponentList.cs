@@ -14,6 +14,7 @@ namespace Necs
         void Resort(ulong id);
         void ResortTree(ulong treeId, ulong priority);
         bool HasTree(ulong treeId);
+        int Count { get; }
     }
 
     struct TreeComparable : IComparable<ComponentInfo>
@@ -276,8 +277,6 @@ namespace Necs
 
         public void ResortTree(ulong treeId, ulong priority)
         {
-            if (ComponentInfo.GetTreePriority(treeId) == priority) return;
-
             var span = GetTreeSpan(treeId);
             var count = span.End - span.Start + 1;
             var priorityIdx = Infos.BinarySearch(new PriorityComparable(priority));
@@ -290,6 +289,10 @@ namespace Necs
 
             // Find first index with higher tree or different priority
             while (target < _count && Infos[target].Priority == priority && Infos[target].Tree < treeId) target++;
+
+            for (int i = span.Start; i < span.End + 1; i++) _info[i].Priority = priority;
+
+            if (ComponentInfo.GetTreePriority(treeId) == priority) return;
 
             if (target == span.Start) return;
 

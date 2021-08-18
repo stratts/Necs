@@ -121,6 +121,7 @@ namespace Necs
                 info.Tree = entityInfo.Tree;
                 info.TreeDepth = info.IsEntity ? (byte)(entityInfo.TreeDepth + 1) : entityInfo.TreeDepth;
                 info.Branch = entityInfo.Branch;
+                info.Priority = ComponentInfo.GetTreePriority(info.Tree);
 
                 if (info.IsEntity)
                 {
@@ -153,6 +154,7 @@ namespace Necs
                 child.TreeDepth = child.IsEntity ? (byte)(entityInfo.TreeDepth + 1) : entityInfo.TreeDepth;
                 child.Tree = entityInfo.Tree;
                 child.Branch = entityInfo.Branch;
+                child.Priority = ComponentInfo.GetTreePriority(child.Tree);
 
                 if (child.IsEntity)
                 {
@@ -255,7 +257,7 @@ namespace Necs
 
         // Protected and private methods
 
-        private ComponentList<T> GetList<T>()
+        internal ComponentList<T> GetList<T>()
         {
             foreach (var list in _lists)
             {
