@@ -86,8 +86,10 @@ namespace Necs
             var list1 = GetList<T1>();
             var list2 = GetList<T2>();
 
-            var infos1 = list1.Infos;
-            var infos2 = list2.Infos;
+            var mask = list1.TypeMask | list2.TypeMask;
+
+            var masks1 = list1.Masks;
+            var masks2 = list2.Masks;
 
             var pairs = TempArray<(int, int)>.Create(Math.Min(list1.Count, list2.Count));
             int count = 0;
@@ -96,31 +98,16 @@ namespace Necs
 
             for (int i = 0; i < list1.Count; i++)
             {
-                ref var info1 = ref infos1[i];
-                var tree = info1.Tree;
-                var parent = info1.ParentId;
-                var priority = info1.Priority;
+                if ((masks1[i] & mask) != mask) continue;
 
                 for (int j = offset; j < list2.Count; j++)
                 {
-                    ref var info2 = ref infos2[j];
-                    var tree2 = info2.Tree;
-                    var parent2 = info2.ParentId;
-                    var priority2 = info2.Priority;
+                    if ((masks2[j] & mask) != mask) continue;
 
-                    if (parent2 == parent)
-                    {
-                        pairs[count] = (i, j);
-                        count++;
-                        offset = j + 1;
-                        break;
-                    }
-                    else if (priority < priority2 || (priority == priority2 && tree < tree2))
-                    {
-                        offset = j;
-                        break;
-                    }
-                    else if (tree2 != tree) j += info2.TreeSize - 1;
+                    pairs[count] = (i, j);
+                    count++;
+                    offset = j + 1;
+                    break;
                 }
             }
 

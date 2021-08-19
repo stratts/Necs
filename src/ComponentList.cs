@@ -15,6 +15,27 @@ namespace Necs
         void ResortTree(ulong treeId, ulong priority);
         bool HasTree(ulong treeId);
         int Count { get; }
+        ulong TypeMask { get; }
+        void SetTypeMask(ulong id, ulong mask);
+    }
+
+    static class TypeId
+    {
+        private static int _current = 0;
+        private static Dictionary<Type, int> _types = new();
+
+        public static int GetId<T>()
+        {
+            if (_types.TryGetValue(typeof(T), out var id)) return id;
+            else
+            {
+                _types[typeof(T)] = _current;
+                _current++;
+                return _current - 1;
+            }
+        }
+
+        public static ulong GetMask<T>() => (ulong)1 << GetId<T>();
     }
 
     struct TreeComparable : IComparable<ComponentInfo>
@@ -47,6 +68,9 @@ namespace Necs
     {
         private ComponentInfo[] _tempInfo = new ComponentInfo[128];
         private T[] _tempData = new T[128];
+        private ulong[] _tempMasks = new ulong[128];
+
+        private ulong[] _masks = new ulong[4];
         private ComponentInfo[] _info = new ComponentInfo[4];
         private T[] _data = new T[4];
         private int _count = 0;
@@ -57,7 +81,10 @@ namespace Necs
         public int Count => _count;
         public Span<ComponentInfo> Infos => _info.AsSpan(0, _count);
         public Span<T> Data => _data.AsSpan(0, _count);
+        public ReadOnlySpan<ulong> Masks => _masks.AsSpan(0, _count);
+
         public Type Type { get; } = typeof(T);
+        public ulong TypeMask { get; } = TypeId.GetMask<T>();
 
         ComponentList<T1>? IComponentList.Cast<T1>() => this is ComponentList<T1> l ? l : null;
 
@@ -97,6 +124,17 @@ namespace Necs
             return (start, end);
         }
 
+        public void SetTypeMask(ulong id, ulong mask)
+        {
+            var idx = GetIndexOfId(id);
+            if (idx != null)
+            {
+                _masks[idx.Value] = mask;
+                _info[idx.Value].TypeMask = mask;
+            }
+            else throw new ArgumentException("Component with that ID not found in list");
+        }
+
         public int? GetIndexOfId(ulong id)
         {
             var tree = _treeMap[id];
@@ -133,14 +171,11 @@ namespace Necs
             var idx = Infos.BinarySearch(info);
 
             if (idx < 0) idx = ~idx;
-            if (idx < _count)
-            {
-                Array.Copy(_info, idx, _info, idx + 1, _count - idx);
-                Array.Copy(_data, idx, _data, idx + 1, _count - idx);
-            }
+            if (idx < _count) CopyData(idx, idx + 1, _count - idx);
 
             _info[idx] = info;
             _data[idx] = data;
+            _masks[idx] = info.TypeMask;
 
             _count++;
 
@@ -153,6 +188,10 @@ namespace Necs
                 var tmpInfo = new ComponentInfo[_info.Length * 2];
                 _info.CopyTo(tmpInfo, 0);
                 _info = tmpInfo;
+
+                var tmpMasks = new ulong[_masks.Length * 2];
+                _masks.CopyTo(tmpMasks, 0);
+                _masks = tmpMasks;
             }
 
             UpdateTreeInfo(idx);
@@ -170,8 +209,7 @@ namespace Necs
             if (_info[i].ParentId != null) _parentMap.Remove(_info[i].Id);
             _info[i].ParentLoc = 0;
 
-            Array.Copy(_info, i + 1, _info, i, _count - i);
-            Array.Copy(_data, i + 1, _data, i, _count - i);
+            CopyData(i + 1, i, _count - i);
             _count--;
 
             UpdateTreeInfo(i);
@@ -186,6 +224,7 @@ namespace Necs
 
             var info = Infos[oldIdx];
             var data = Data[oldIdx];
+            var mask = _masks[oldIdx];
 
             _treeMap[info.Id] = info.Tree;
 
@@ -230,26 +269,31 @@ namespace Necs
                 return;
             }
 
-            Array.Copy(_info, start, _info, start + shift, length);
-            Array.Copy(_data, start, _data, start + shift, length);
+            CopyData(start, start + shift, length);
 
             _info[newIdx] = info;
             _data[newIdx] = data;
+            _masks[newIdx] = mask;
 
             UpdateTreeInfo(newIdx);
+        }
+
+        private void CopyData(int oldPos, int newPos, int length)
+        {
+            Array.Copy(_info, oldPos, _info, newPos, length);
+            Array.Copy(_data, oldPos, _data, newPos, length);
+            Array.Copy(_masks, oldPos, _masks, newPos, length);
         }
 
         public void UpdateTreeInfo(int idx)
         {
             var tree = _info[idx].Tree;
             var (start, end) = GetTreeSpan(tree, idx);
-            var treeSize = (ushort)(end - start + 1);
 
             for (int i = start; i < end + 1; i++)
             {
                 ref var info = ref _info[i];
                 var depth = info.TreeDepth;
-                info.TreeSize = treeSize;
 
                 for (int j = i - 1; j >= 0; j--)
                 {
@@ -293,9 +337,11 @@ namespace Necs
 
             var tempInfo = _tempInfo.AsSpan(0, count);
             var tempData = _tempData.AsSpan(0, count);
+            var tempMasks = _tempMasks.AsSpan(0, count);
 
             Infos.Slice(span.Start, count).CopyTo(tempInfo);
             Data.Slice(span.Start, count).CopyTo(tempData);
+            _masks.AsSpan(span.Start, count).CopyTo(tempMasks);
 
             if (target > span.Start)
             {
@@ -303,20 +349,20 @@ namespace Necs
                 {
                     var len = Math.Abs(target - (span.End + 1));
                     if (len == 0) return;
-                    Infos.Slice(span.End + 1, len).CopyTo(Infos.Slice(span.Start, len));
-                    Data.Slice(span.End + 1, len).CopyTo(Data.Slice(span.Start, len));
+                    CopyData(span.End + 1, span.Start, len);
                     tempInfo.CopyTo(Infos.Slice(target - count, count));
                     tempData.CopyTo(Data.Slice(target - count, count));
+                    tempMasks.CopyTo(_masks.AsSpan(target - count, count));
                 }
             }
             else if (target < span.Start)
             {
                 var len = Math.Abs(target - span.Start);
                 if (len == 0) return;
-                Infos.Slice(target, len).CopyTo(Infos.Slice(target + count, len));
-                Data.Slice(target, len).CopyTo(Data.Slice(target + count, len));
+                CopyData(target, target + count, len);
                 tempInfo.CopyTo(Infos.Slice(target, count));
                 tempData.CopyTo(Data.Slice(target, count));
+                tempMasks.CopyTo(_masks.AsSpan(target, count));
             }
             else return;
         }

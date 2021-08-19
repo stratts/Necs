@@ -138,6 +138,11 @@ namespace Necs
                     UpdateTree(componentId);
                 }
                 else GetList(componentId).Resort(componentId);
+
+                ulong mask = 0;
+
+                foreach (var id in entityData.Children) mask |= GetList(id).TypeMask;
+                foreach (var id in entityData.Children) GetList(id).SetTypeMask(id, mask);
             });
         }
 
